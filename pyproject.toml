@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manipulator-framework"
+version = "0.1.0"
+description = "Scientific robotics framework for visual servoing, perception, tracking and obstacle avoidance."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Your Name" }
+]
+dependencies = [
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "mypy>=1.8",
+  "ruff>=0.5",
+]
+
+robotics = [
+  "roboticstoolbox-python"
+]
+
+vision = [
+  "opencv-python"
+]
+
+yolo = [
+  "ultralytics"
+]
+
+ros2 = [
+  # intentionally empty in pyproject base;
+  # ROS 2 dependencies should stay optional and isolated by environment
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true

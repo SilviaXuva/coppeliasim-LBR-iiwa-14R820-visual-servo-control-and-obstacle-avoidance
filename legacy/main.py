@@ -1,8 +1,8 @@
-from experiments import (
+from legacy_experiments import (
     # ConveyorTest,
     # CuboidsTest,
     # GripperTest,
-    RobotTest,
+    # RobotTest,
     StructureTest,
     # TrajDrawingTest,
     # VisionSensorTest
@@ -10,12 +10,12 @@ from experiments import (
 from utils import DEG_TO_RAD
 
 if __name__ == "__main__":
-    StructureTest(
-        config={
-            "scene": None,
-            "duration": 10.0,
-        }
-    ).run()
+    # StructureTest(
+    #     config={
+    #         "scene": None,
+    #         "duration": 10.0,
+    #     }
+    # ).run()
 
     StructureTest(
         config={
@@ -24,22 +24,22 @@ if __name__ == "__main__":
         }
     ).run()
 
-    RobotTest(
-        config={
-            "scene": None,
-            "duration": 10.0,
-            "robot_target_vel": [0, 0, 0, 0, 0, 0, 90 * DEG_TO_RAD],
-        }
-    ).run()
+    # RobotTest(
+    #     config={
+    #         "scene": None,
+    #         "duration": 10.0,
+    #         "robot_target_vel": [0, 0, 0, 0, 0, 0, 90 * DEG_TO_RAD],
+    #     }
+    # ).run()
 
-    RobotTest(
-        config={
-            "scene": "1.LBR_iiwa.ttt",
-            "duration": 10.0,
-            "robot_target_vel": [0, 0, 0, 0, 0, 0, 90 * DEG_TO_RAD],
-        }
-    ).run()
-    
+    # RobotTest(
+    #     config={
+    #         "scene": "1.LBR_iiwa.ttt",
+    #         "duration": 10.0,
+    #         "robot_target_vel": [0, 0, 0, 0, 0, 0, 90 * DEG_TO_RAD],
+    #     }
+    # ).run()
+
     # VisionSensorTest(
     #     config={
     #         "scene": "2.ArUco_rgb.ttt",

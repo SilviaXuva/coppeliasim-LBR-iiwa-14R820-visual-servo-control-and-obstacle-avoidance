@@ -1,7 +1,12 @@
 **/__pycache__/*
 .vscode/
 .env/
+.pytest_cache/
 
 outputs/
 
 *.pt
+*.log
+
+experiments/runs/
+experiments/reports/
