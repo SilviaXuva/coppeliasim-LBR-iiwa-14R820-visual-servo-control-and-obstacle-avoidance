@@ -10,16 +10,15 @@ from manipulator_framework.core.runtime import (
     StepResult,
 )
 
-if __package__ in (None, ""):
-    import pathlib
-    import sys
-
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
-    sys.path.append(str(repo_root / "src"))
-    sys.path.append(str(repo_root))
-    from examples.runtime._mocks import FakeClock  # type: ignore
-else:
-    from ._mocks import FakeClock
+from manipulator_framework.examples.core.runtime._mocks import (
+    FakeCamera,
+    FakeClock,
+    FakeController,
+    FakePersonDetector,
+    FakePlanner,
+    FakeRobot,
+    FakeTracker,
+)
 
 
 @dataclass

@@ -8,7 +8,7 @@ from manipulator_framework.core.runtime import (
     RuntimeContext,
     SensingStep,
 )
-from examples.runtime._mocks import (
+from manipulator_framework.examples.core.runtime._mocks import (
     FakeCamera,
     FakeController,
     FakePersonDetector,

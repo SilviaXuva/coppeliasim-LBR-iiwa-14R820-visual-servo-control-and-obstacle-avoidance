@@ -10,32 +10,15 @@ from manipulator_framework.core.runtime import (
     SensingStep,
 )
 
-if __package__ in (None, ""):
-    import pathlib
-    import sys
-
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
-    sys.path.append(str(repo_root / "src"))
-    sys.path.append(str(repo_root))
-    from examples.runtime._mocks import (  # type: ignore
-        FakeCamera,
-        FakeClock,
-        FakeController,
-        FakePersonDetector,
-        FakePlanner,
-        FakeRobot,
-        FakeTracker,
-    )
-else:
-    from ._mocks import (
-        FakeCamera,
-        FakeClock,
-        FakeController,
-        FakePersonDetector,
-        FakePlanner,
-        FakeRobot,
-        FakeTracker,
-    )
+from manipulator_framework.examples.core.runtime._mocks import (
+    FakeCamera,
+    FakeClock,
+    FakeController,
+    FakePersonDetector,
+    FakePlanner,
+    FakeRobot,
+    FakeTracker,
+)
 
 
 def main() -> None:
