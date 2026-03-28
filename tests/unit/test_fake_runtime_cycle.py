@@ -9,7 +9,7 @@ from manipulator_framework.core.runtime import (
     RuntimePipeline,
     SensingStep,
 )
-from manipulator_framework.examples.core.runtime._mocks import (
+from examples.core.runtime._mocks import (
     FakeCamera,
     FakeClock,
     FakeController,

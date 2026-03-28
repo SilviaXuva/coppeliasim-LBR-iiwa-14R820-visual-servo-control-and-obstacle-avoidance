@@ -4,7 +4,7 @@ from manipulator_framework.application.composition.mock_composer import MockAppl
 from manipulator_framework.application.dto.run_requests import BenchmarkControllersRequest
 from manipulator_framework.core.experiments import RunResult, RunSchema
 from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
-from manipulator_framework.examples.application._mocks import FakeClock, FakeExecutionEngine, InMemoryResultsRepository
+from tests.fixtures.application_fakes import FakeClock, FakeExecutionEngine, InMemoryResultsRepository
 
 
 def make_result(method: str, idx: int, seed: int, rmse: float) -> RunResult:

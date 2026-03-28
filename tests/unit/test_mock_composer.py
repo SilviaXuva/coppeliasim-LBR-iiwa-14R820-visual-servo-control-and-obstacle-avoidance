@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from manipulator_framework.application.composition.mock_composer import MockApplicationComposer
-from manipulator_framework.examples.application._mocks import FakeClock, FakeExecutionEngine, InMemoryResultsRepository
+from tests.fixtures.application_fakes import FakeClock, FakeExecutionEngine, InMemoryResultsRepository
 
 
 def test_mock_composer_builds_main_use_cases() -> None:

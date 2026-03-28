@@ -59,6 +59,20 @@ class JointCommand(SerializableMixin):
         if self.joint_names and len(self.joint_names) != values.size:
             raise ValueError("joint_names size must match command size.")
 
+    @property
+    def positions(self) -> list[float]:
+        """Alias for position-mode commands (kept for ROS adapter/tests compatibility)."""
+        return self.values.tolist()
+
+    @property
+    def velocities(self) -> None:
+        """Placeholder to satisfy ROS adapter expectations; velocity commands not represented here."""
+        return None
+
+    @property
+    def accelerations(self) -> None:
+        """Placeholder to satisfy ROS adapter expectations; acceleration commands not represented here."""
+        return None
 
 @dataclass(frozen=True)
 class TorqueCommand(SerializableMixin):

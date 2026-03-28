@@ -1,0 +1,22 @@
+app:
+  name: manipulator_framework
+  mode: experiment
+
+runtime:
+  dt: 0.02
+  max_steps: 50
+
+logging:
+  level: INFO
+  save_to_file: true
+
+results:
+  base_dir: experiments/runs
+
+experiment:
+  name: pbvs_with_avoidance
+  seed: 123
+  tags:
+    - mestrado
+    - pbvs
+    - avoidance
