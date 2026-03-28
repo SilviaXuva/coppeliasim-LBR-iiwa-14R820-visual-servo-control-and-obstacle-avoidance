@@ -12,5 +12,9 @@ class ExecutionEngineInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def run(self, steps: int | None = None) -> dict[str, Any]:
+    def run(self, num_cycles: int = 1) -> tuple[CycleResult, ...]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reset(self) -> None:
         raise NotImplementedError
