@@ -1,0 +1,14 @@
+name: controller_benchmark
+description: >
+  Cenário mínimo para benchmark reproduzível entre controlador PD e PD adaptativo
+  sobre a mesma trajetória articular de referência.
+parameters:
+  robot:
+    model: lbr_iiwa_14r820
+  trajectory:
+    kind: quintic_joint_trajectory
+    duration_s: 1.5
+    start_positions_rad: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    goal_positions_rad: [0.3, -0.2, 0.4, -0.3, 0.2, 0.1, -0.1]
+  evaluation:
+    primary_metric: joint_position_rmse

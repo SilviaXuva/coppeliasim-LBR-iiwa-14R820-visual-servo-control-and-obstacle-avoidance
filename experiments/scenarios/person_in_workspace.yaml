@@ -1,0 +1,21 @@
+name: person_in_workspace
+description: >
+  Cenário mínimo para PBVS com presença de pessoa no espaço de trabalho,
+  usado para comparar baseline sem avoidance vs pipeline com avoidance.
+parameters:
+  workspace:
+    frame: world
+    bounds_xyz_m:
+      x: [0.20, 0.90]
+      y: [-0.50, 0.50]
+      z: [0.00, 1.20]
+  target:
+    type: aruco_marker
+    frame: aruco_target
+    nominal_pose_xyz_m: [0.60, 0.00, 0.40]
+  obstacle:
+    type: person
+    nominal_pose_xyz_m: [0.45, 0.05, 0.30]
+    safety_radius_m: 0.25
+  camera:
+    frame: camera

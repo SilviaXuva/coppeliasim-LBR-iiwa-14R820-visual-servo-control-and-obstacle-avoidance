@@ -1,0 +1,11 @@
+name: pbvs_with_avoidance_protocol
+repetitions: 3
+seeds: [101, 102, 103]
+compared_methods:
+  - pbvs_baseline
+  - pbvs_with_avoidance
+resolved_config:
+  app:
+    use_case: run_pbvs_with_avoidance
+  scenario_name: person_in_workspace
+  backend_name: coppeliasim
