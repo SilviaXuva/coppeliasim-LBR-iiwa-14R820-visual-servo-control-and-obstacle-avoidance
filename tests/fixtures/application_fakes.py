@@ -8,8 +8,8 @@ from manipulator_framework.core.contracts import (
     ExecutionEngineInterface,
     ResultsRepositoryInterface,
 )
+from manipulator_framework.core.experiments import RunResult
 from manipulator_framework.core.runtime import CycleResult, StepResult
-from manipulator_framework.core.types import ExperimentResult
 
 
 class FakeClock(ClockInterface):
@@ -82,11 +82,11 @@ class InMemoryResultsRepository(ResultsRepositoryInterface):
     In-memory repository for tests and examples.
     """
 
-    saved_results: list[ExperimentResult] = field(default_factory=list)
+    saved_results: list[RunResult] = field(default_factory=list)
     saved_timeseries: dict[str, dict[str, list[dict[str, Any]]]] = field(default_factory=dict)
     saved_artifacts: dict[str, dict[str, str]] = field(default_factory=dict)
 
-    def save_result(self, result: ExperimentResult) -> None:
+    def save_result(self, result: RunResult) -> None:
         self.saved_results.append(result)
 
     def save_timeseries(

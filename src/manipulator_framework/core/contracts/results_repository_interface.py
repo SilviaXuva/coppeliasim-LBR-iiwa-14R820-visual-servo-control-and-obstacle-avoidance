@@ -3,14 +3,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from manipulator_framework.core.types import ExperimentResult
+from manipulator_framework.core.experiments import RunResult
 
 
 class ResultsRepositoryInterface(ABC):
     """Persist experimental outputs."""
 
     @abstractmethod
-    def save_result(self, result: ExperimentResult) -> None:
+    def save_result(self, result: RunResult) -> None:
         raise NotImplementedError
 
     @abstractmethod

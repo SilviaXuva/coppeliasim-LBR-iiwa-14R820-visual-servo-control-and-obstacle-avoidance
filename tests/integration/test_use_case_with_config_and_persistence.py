@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
+from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
 from manipulator_framework.infrastructure.config.loader import YAMLConfigurationLoader
 from manipulator_framework.infrastructure.logging.run_logger import RunLogger
 from manipulator_framework.infrastructure.persistence.filesystem_results_repository import (
     FileSystemResultsRepository,
 )
 from manipulator_framework.infrastructure.utils.seeds import set_global_seed
-
-
-@dataclass
-class FakeExperimentResult:
-    run_id: str
-    metadata: dict[str, Any]
-    summary: dict[str, Any]
 
 
 class FakeUseCase:
@@ -88,13 +81,28 @@ experiment:
     artifact_file = tmp_path / "artifact.txt"
     artifact_file.write_text(output["artifact_text"], encoding="utf-8")
 
-    result = FakeExperimentResult(
-        run_id=run_id,
-        metadata={
-            "seed": config["experiment"]["seed"],
-            "experiment_name": config["experiment"]["name"],
-        },
-        summary=output["summary"],
+    result = RunResult(
+        run_schema=RunSchema(
+            run_id=run_id,
+            experiment_name=config["experiment"]["name"],
+            scenario_name="integration_scenario",
+            backend_name="mock",
+            seed=config["experiment"]["seed"],
+            resolved_config=config,
+            tags=tuple(config["experiment"]["tags"]),
+        ),
+        metrics=MetricsSnapshot(
+            scalar_metrics=(
+                ScalarMetric(name="success_rate", value=1.0, unit="ratio"),
+            ),
+        ),
+        artifacts=(
+            RunArtifact(name="artifact.txt", path=str(artifact_file), kind="text"),
+        ),
+        success=output["summary"]["success"],
+        started_at=0.0,
+        finished_at=1.0,
+        metadata={"steps_executed": output["summary"]["steps_executed"]},
     )
 
     repository.save_result(result)
@@ -102,7 +110,11 @@ experiment:
     repository.save_artifact(run_id, "artifact.txt", str(artifact_file))
 
     run_dir = Path(config["results"]["base_dir"]) / run_id
-    assert (run_dir / "result.json").exists()
+    assert (run_dir / "config.yaml").exists()
+    assert (run_dir / "metadata.json").exists()
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "metrics.json").exists()
+    assert (run_dir / "metrics.csv").exists()
     assert (run_dir / "tracking_error_series.json").exists()
     assert (run_dir / "artifacts" / "artifact.txt").exists()
     assert (run_dir / "logs" / "run.log").exists()

@@ -1,43 +1,45 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
+from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
 from manipulator_framework.infrastructure.persistence.filesystem_results_repository import (
     FileSystemResultsRepository,
 )
 
 
-@dataclass
-class FakeExperimentResult:
-    run_id: str
-    metadata: dict[str, Any]
-    summary: dict[str, Any]
-
-
-def test_results_repository_saves_result_timeseries_and_artifact(tmp_path: Path) -> None:
+def test_results_repository_saves_canonical_run_result(tmp_path: Path) -> None:
     repository = FileSystemResultsRepository(base_dir=str(tmp_path))
     run_id = "run_001"
 
-    result = FakeExperimentResult(
-        run_id=run_id,
-        metadata={"seed": 123},
-        summary={"success": True},
+    result = RunResult(
+        run_schema=RunSchema(
+            run_id=run_id,
+            experiment_name="run_joint_trajectory",
+            scenario_name="synthetic_joint_trajectory",
+            backend_name="mock",
+            seed=123,
+            resolved_config={"runtime": {"dt": 0.01}},
+        ),
+        metrics=MetricsSnapshot(
+            scalar_metrics=(
+                ScalarMetric(name="success_rate", value=1.0, unit="ratio"),
+            ),
+        ),
+        artifacts=(
+            RunArtifact(name="summary", path="experiments/runs/run_001/summary.json", kind="json"),
+        ),
+        success=True,
+        started_at=0.0,
+        finished_at=1.0,
+        metadata={"controller": "pd"},
     )
 
     artifact_source = tmp_path / "artifact.txt"
     artifact_source.write_text("artifact payload", encoding="utf-8")
 
     repository.save_result(result)
-    repository.save_timeseries(
-        run_id=run_id,
-        series_name="latency_series",
-        samples=[
-            {"t": 0.0, "latency_ms": 4.2},
-            {"t": 0.1, "latency_ms": 4.3},
-        ],
-    )
     repository.save_artifact(
         run_id=run_id,
         artifact_name="artifact.txt",
@@ -45,6 +47,9 @@ def test_results_repository_saves_result_timeseries_and_artifact(tmp_path: Path)
     )
 
     run_dir = tmp_path / run_id
-    assert (run_dir / "result.json").exists()
-    assert (run_dir / "latency_series.json").exists()
+    assert (run_dir / "config.yaml").exists()
+    assert (run_dir / "metadata.json").exists()
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "metrics.json").exists()
+    assert (run_dir / "metrics.csv").exists()
     assert (run_dir / "artifacts" / "artifact.txt").exists()

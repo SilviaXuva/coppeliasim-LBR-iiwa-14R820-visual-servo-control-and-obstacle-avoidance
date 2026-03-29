@@ -22,8 +22,6 @@ class RunJointTrajectory:
     def execute(self, request: RunJointTrajectoryRequest) -> RunResponse:
         started_at = self.clock.now()
         cycle_result = self.execution_engine.step()
-        cycle_success = cycle_result.success
-        cycle_index = cycle_result.cycle_index
         finished_at = self.clock.now()
 
         run_result = RunResult(
@@ -39,7 +37,7 @@ class RunJointTrajectory:
                 scalar_metrics=(
                     ScalarMetric(
                         name="success_rate",
-                        value=1.0 if cycle_success else 0.0,
+                        value=1.0 if cycle_result.success else 0.0,
                         unit="ratio",
                     ),
                 ),
@@ -51,11 +49,18 @@ class RunJointTrajectory:
                     kind="json",
                 ),
             ),
-            success=cycle_success,
+            success=cycle_result.success,
             started_at=started_at,
             finished_at=finished_at,
-            metadata={"cycle_index": cycle_index},
+            metadata={
+                "cycle_index": cycle_result.cycle_index,
+                "cycle_timestamp": cycle_result.timestamp,
+                "cycle_message": cycle_result.message,
+            },
         )
 
         self.experiment_service.persist(run_result)
-        return RunResponse(run_result=run_result)
+        return RunResponse(
+            cycle_result=cycle_result,
+            run_result=run_result,
+        )

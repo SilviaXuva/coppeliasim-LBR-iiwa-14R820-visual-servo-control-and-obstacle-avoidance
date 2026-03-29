@@ -22,8 +22,6 @@ class RunPBVS:
     def execute(self, request: RunPBVSRequest) -> RunResponse:
         started_at = self.clock.now()
         cycle_result = self.execution_engine.step()
-        cycle_success = cycle_result.success
-        cycle_index = cycle_result.cycle_index
         finished_at = self.clock.now()
 
         result = RunResult(
@@ -37,7 +35,7 @@ class RunPBVS:
             ),
             metrics=MetricsSnapshot(
                 scalar_metrics=(
-                    ScalarMetric("success_rate", 1.0 if cycle_success else 0.0, "ratio"),
+                    ScalarMetric("success_rate", 1.0 if cycle_result.success else 0.0, "ratio"),
                 ),
             ),
             artifacts=(
@@ -47,11 +45,18 @@ class RunPBVS:
                     kind="json",
                 ),
             ),
-            success=cycle_success,
+            success=cycle_result.success,
             started_at=started_at,
             finished_at=finished_at,
-            metadata={"cycle_index": cycle_index},
+            metadata={
+                "cycle_index": cycle_result.cycle_index,
+                "cycle_timestamp": cycle_result.timestamp,
+                "cycle_message": cycle_result.message,
+            },
         )
 
         self.experiment_service.persist(result)
-        return RunResponse(run_result=result)
+        return RunResponse(
+            cycle_result=cycle_result,
+            run_result=result,
+        )
