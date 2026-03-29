@@ -39,5 +39,9 @@ def test_use_case_consumes_cycle_result_object_contract() -> None:
     )
 
     assert response.run_result.success is True
-    assert response.run_result.metadata["cycle_index"] == 0
+    assert response.execution_plan.num_cycles == 10
+    assert len(response.cycle_results) == 10
+    assert response.cycle_result.cycle_index == 9
+    assert response.run_result.metadata["final_cycle_index"] == 9
+    assert response.run_result.metadata["num_cycles"] == 10
     assert len(repository.saved_results) == 1

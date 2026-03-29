@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
 @dataclass(frozen=True)
 class RunRequest:
     """
-    Base application request.
+    Base application request with explicit execution controls.
     """
     run_id: str
     config: dict[str, Any]
     seed: int = 0
+    tags: tuple[str, ...] = ()
+    notes: str = ""
+    max_cycles: int | None = None
 
 
 @dataclass(frozen=True)

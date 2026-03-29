@@ -5,43 +5,35 @@ from dataclasses import dataclass
 from manipulator_framework.application.dto.run_requests import RunJointTrajectoryRequest
 from manipulator_framework.application.dto.run_responses import RunResponse
 from manipulator_framework.application.services.experiment_service import ExperimentService
-from manipulator_framework.core.contracts import ClockInterface, ExecutionEngineInterface
-from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
-from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
+from manipulator_framework.application.services.run_result_factory import RunResultFactory
+from manipulator_framework.application.services.runtime_execution_service import RuntimeExecutionService
+from manipulator_framework.core.contracts import ExecutionEngineInterface
+from manipulator_framework.core.experiments import RunArtifact
 
 
 @dataclass
 class RunJointTrajectory:
     """
     Application use case for joint trajectory execution.
+    Explicitly orchestrates runtime execution, result assembly and persistence.
     """
     execution_engine: ExecutionEngineInterface
-    clock: ClockInterface
+    runtime_execution_service: RuntimeExecutionService
+    run_result_factory: RunResultFactory
     experiment_service: ExperimentService
 
     def execute(self, request: RunJointTrajectoryRequest) -> RunResponse:
-        started_at = self.clock.now()
-        cycle_result = self.execution_engine.step()
-        finished_at = self.clock.now()
+        execution_summary = self.runtime_execution_service.execute(
+            execution_engine=self.execution_engine,
+            duration=request.duration,
+            max_cycles=request.max_cycles,
+        )
 
-        run_result = RunResult(
-            run_schema=RunSchema(
-                run_id=request.run_id,
-                experiment_name="run_joint_trajectory",
-                scenario_name=request.config.get("scenario_name", "synthetic_joint_trajectory"),
-                backend_name=request.config.get("backend_name", "mock"),
-                seed=request.seed,
-                resolved_config=request.config,
-            ),
-            metrics=MetricsSnapshot(
-                scalar_metrics=(
-                    ScalarMetric(
-                        name="success_rate",
-                        value=1.0 if cycle_result.success else 0.0,
-                        unit="ratio",
-                    ),
-                ),
-            ),
+        run_result = self.run_result_factory.build(
+            request=request,
+            experiment_name="run_joint_trajectory",
+            default_scenario_name="synthetic_joint_trajectory",
+            execution_summary=execution_summary,
             artifacts=(
                 RunArtifact(
                     name="cycle_result",
@@ -49,18 +41,24 @@ class RunJointTrajectory:
                     kind="json",
                 ),
             ),
-            success=cycle_result.success,
-            started_at=started_at,
-            finished_at=finished_at,
-            metadata={
-                "cycle_index": cycle_result.cycle_index,
-                "cycle_timestamp": cycle_result.timestamp,
-                "cycle_message": cycle_result.message,
+            extra_metadata={
+                "pipeline_kind": "joint_trajectory",
+                "pipeline_stages": (
+                    "planning",
+                    "control",
+                    "actuation",
+                ),
             },
         )
 
-        self.experiment_service.persist(run_result)
+        self.experiment_service.persist(
+            result=run_result,
+            cycle_results=execution_summary.cycle_results,
+        )
+
         return RunResponse(
-            cycle_result=cycle_result,
+            execution_plan=execution_summary.plan,
+            cycle_results=execution_summary.cycle_results,
+            cycle_result=execution_summary.final_cycle_result,
             run_result=run_result,
         )
