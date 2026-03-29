@@ -22,8 +22,8 @@ class RunPBVSWithTracking:
     def execute(self, request: RunPBVSWithTrackingRequest) -> RunResponse:
         started_at = self.clock.now()
         cycle_result = self.execution_engine.step()
-        cycle_success = bool(cycle_result["success"])
-        cycle_index = int(cycle_result["cycle_index"])
+        cycle_success = cycle_result.success
+        cycle_index = cycle_result.cycle_index
         finished_at = self.clock.now()
 
         result = RunResult(
@@ -50,7 +50,7 @@ class RunPBVSWithTracking:
             success=cycle_success,
             started_at=started_at,
             finished_at=finished_at,
-            metadata={},
+            metadata={"cycle_index": cycle_index},
         )
 
         self.experiment_service.persist(result)

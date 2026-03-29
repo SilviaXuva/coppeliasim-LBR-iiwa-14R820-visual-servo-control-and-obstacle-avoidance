@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from manipulator_framework.application.dto.run_requests import RunJointTrajectoryRequest
 from manipulator_framework.application.dto.run_responses import RunResponse
 from manipulator_framework.application.services.experiment_service import ExperimentService
-from manipulator_framework.core.contracts import ClockInterface, ControllerInterface, ExecutionEngineInterface
+from manipulator_framework.core.contracts import ClockInterface, ExecutionEngineInterface
 from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
 from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
 
@@ -22,8 +22,8 @@ class RunJointTrajectory:
     def execute(self, request: RunJointTrajectoryRequest) -> RunResponse:
         started_at = self.clock.now()
         cycle_result = self.execution_engine.step()
-        cycle_success = bool(cycle_result["success"])
-        cycle_index = int(cycle_result["cycle_index"])
+        cycle_success = cycle_result.success
+        cycle_index = cycle_result.cycle_index
         finished_at = self.clock.now()
 
         run_result = RunResult(

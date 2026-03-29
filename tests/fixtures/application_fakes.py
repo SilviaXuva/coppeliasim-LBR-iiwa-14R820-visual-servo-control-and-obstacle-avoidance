@@ -8,6 +8,7 @@ from manipulator_framework.core.contracts import (
     ExecutionEngineInterface,
     ResultsRepositoryInterface,
 )
+from manipulator_framework.core.runtime import CycleResult, StepResult
 from manipulator_framework.core.types import ExperimentResult
 
 
@@ -47,26 +48,26 @@ class FakeExecutionEngine(ExecutionEngineInterface):
     def __init__(self) -> None:
         self._cycle = 0
 
-    def step(self) -> dict[str, Any]:
-        result = {
-            "cycle_index": self._cycle,
-            "success": True,
-            "step_results": (
-                {"step_name": "sensing", "success": True, "timestamp": 0.0},
-                {"step_name": "planning", "success": True, "timestamp": 0.0},
-                {"step_name": "control", "success": True, "timestamp": 0.0},
+    def step(self) -> CycleResult:
+        result = CycleResult(
+            cycle_index=self._cycle,
+            success=True,
+            step_results=(
+                StepResult(step_name="sensing", success=True, timestamp=0.0),
+                StepResult(step_name="planning", success=True, timestamp=0.0),
+                StepResult(step_name="control", success=True, timestamp=0.0),
             ),
-            "timestamp": 0.0,
-            "message": "Fake cycle completed.",
-        }
+            timestamp=0.0,
+            message="Fake cycle completed.",
+        )
         self._cycle += 1
         return result
 
-    def run(self, num_cycles: int = 1) -> tuple[dict[str, Any], ...]:
+    def run(self, num_cycles: int = 1) -> tuple[CycleResult, ...]:
         if num_cycles < 0:
             raise ValueError("num_cycles must be non-negative.")
 
-        results: list[dict[str, Any]] = []
+        results: list[CycleResult] = []
         for _ in range(num_cycles):
             results.append(self.step())
         return tuple(results)
