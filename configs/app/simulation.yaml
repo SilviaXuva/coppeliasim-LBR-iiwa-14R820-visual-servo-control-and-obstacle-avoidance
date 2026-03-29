@@ -1,0 +1,20 @@
+app:
+  mode: simulation
+  use_case: run_joint_trajectory
+
+runtime:
+  dt: 0.05
+  max_steps: 100
+  save_runtime_series: true
+
+experiment:
+  name: simulation_run
+  seed: 42
+  tags: [simulation, baseline]
+  notes: "Default simulation app configuration."
+
+scenario:
+  name: synthetic_joint_trajectory
+
+results:
+  base_dir: experiments/runs

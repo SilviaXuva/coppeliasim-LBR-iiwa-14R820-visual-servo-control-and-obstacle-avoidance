@@ -1,0 +1,15 @@
+app:
+  use_case: run_joint_trajectory
+
+planning:
+  kind: quintic_joint_trajectory
+  duration: 1.5
+
+experiment:
+  name: joint_trajectory_baseline
+  seed: 2026
+  tags: [experiment, trajectory, baseline]
+  notes: "Reference baseline for joint trajectory execution."
+
+scenario:
+  name: synthetic_joint_trajectory

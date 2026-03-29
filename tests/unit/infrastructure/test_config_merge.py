@@ -1,40 +1,40 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from manipulator_framework.infrastructure.config.loader import YAMLConfigurationLoader
 
 
-def test_config_loader_loads_yaml_file(tmp_path: Path) -> None:
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        """
-app:
-  name: test_app
-  mode: simulation
+def test_config_loader_resolves_defaults_with_partial_override() -> None:
+    loader = YAMLConfigurationLoader()
 
-runtime:
-  dt: 0.02
-  max_steps: 10
-
-logging:
-  level: INFO
-  save_to_file: true
-
-results:
-  base_dir: experiments/runs
-
-experiment:
-  name: test_experiment
-  seed: 123
-  tags: [unit, config]
-""".strip(),
-        encoding="utf-8",
+    resolved = loader.resolve(
+        {
+            "app": {
+                "mode": "experiment",
+                "use_case": "run_pbvs_with_avoidance",
+            },
+            "experiment": {
+                "name": "partial_override",
+                "seed": 99,
+                "tags": ["unit"],
+                "notes": "merge test",
+            },
+            "scenario": {
+                "name": "person_in_workspace",
+            },
+            "visual_servoing": {
+                "enabled": True,
+            },
+            "obstacle_avoidance": {
+                "enabled": True,
+            },
+        }
     )
 
-    loader = YAMLConfigurationLoader()
-    raw_config = loader.load(str(config_file))
-
-    assert raw_config["app"]["name"] == "test_app"
-    assert raw_config["runtime"]["dt"] == 0.02
-    assert raw_config["experiment"]["seed"] == 123
+    assert resolved["app"]["name"] == "manipulator_framework"
+    assert resolved["app"]["mode"] == "experiment"
+    assert resolved["app"]["use_case"] == "run_pbvs_with_avoidance"
+    assert resolved["runtime"]["dt"] == 0.05
+    assert resolved["controller"]["kind"] == "joint_pd"
+    assert resolved["visual_servoing"]["enabled"] is True
+    assert resolved["obstacle_avoidance"]["enabled"] is True
+    assert resolved["scenario"]["name"] == "person_in_workspace"

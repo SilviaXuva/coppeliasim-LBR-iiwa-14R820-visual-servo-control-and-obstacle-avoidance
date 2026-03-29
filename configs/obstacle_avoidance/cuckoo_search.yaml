@@ -1,0 +1,7 @@
+obstacle_avoidance:
+  enabled: true
+  kind: cuckoo_search
+  weight: 1.0
+  clearance_m: 0.20
+  population_size: 15
+  max_iterations: 20

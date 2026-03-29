@@ -1,0 +1,22 @@
+app:
+  use_case: run_pbvs_with_avoidance
+
+planning:
+  kind: quintic_joint_trajectory
+  duration: 2.0
+
+visual_servoing:
+  enabled: true
+  kind: pbvs
+  target_frame: aruco_target
+  camera_frame: camera
+  gain: 0.9
+
+experiment:
+  name: pbvs_with_avoidance
+  seed: 2026
+  tags: [experiment, pbvs, avoidance, aruco, yolo]
+  notes: "Reference experiment for PBVS with obstacle avoidance."
+
+scenario:
+  name: person_in_workspace
