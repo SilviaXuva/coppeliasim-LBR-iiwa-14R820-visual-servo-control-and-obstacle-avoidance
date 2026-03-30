@@ -17,6 +17,18 @@ from manipulator_framework.core.types import (
 
 @dataclass
 class PyPlotRobotAdapter(RobotInterface):
+    """
+    Minimal PyPlot backend robot adapter.
+
+    Expected backend API by convention:
+    - current_joint_positions()
+    - current_joint_velocities()
+    - current_time()
+    - current_end_effector_pose()
+    - apply_joint_command(np.ndarray)
+    - apply_torque_command(np.ndarray)
+    """
+
     backend: Any
     joint_names: tuple[str, ...]
 
@@ -32,6 +44,7 @@ class PyPlotRobotAdapter(RobotInterface):
         )
         return RobotState(
             joint_state=joint_state,
+            end_effector_pose=self.get_end_effector_pose(),
             timestamp=joint_state.timestamp,
         )
 
@@ -39,7 +52,7 @@ class PyPlotRobotAdapter(RobotInterface):
         self.backend.apply_joint_command(np.asarray(command.values, dtype=float))
 
     def send_torque_command(self, command: TorqueCommand) -> None:
-        self.backend.apply_torque_command(np.asarray(command.values, dtype=float))
+        self.backend.apply_torque_command(np.asarray(command.torques, dtype=float))
 
     def get_end_effector_pose(self) -> Pose3D:
         position, quat = self.backend.current_end_effector_pose()

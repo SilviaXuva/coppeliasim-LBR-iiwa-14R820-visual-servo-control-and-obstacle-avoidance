@@ -10,27 +10,36 @@ from manipulator_framework.core.contracts import SimulatorInterface
 class CoppeliaSimSimulatorAdapter(SimulatorInterface):
     """
     Adapter for high-level simulator lifecycle control.
+
+    Expected sim_client API by convention:
+    - start_simulation() or start()
+    - step_simulation() or step()
+    - stop_simulation() or stop()
     """
+
     sim_client: Any
 
     def start(self) -> None:
-        self._start_simulation()
+        self._call_required("start_simulation", "start")
 
     def step(self) -> None:
-        self._step_simulation()
+        self._call_required("step_simulation", "step")
 
     def stop(self) -> None:
-        self._stop_simulation()
+        self._call_required("stop_simulation", "stop")
 
     def reset(self) -> None:
         self.stop()
         self.start()
 
-    def _start_simulation(self) -> None:
-        raise NotImplementedError("Bind simulator start API here.")
+    def _call_required(self, *method_names: str) -> Any:
+        for method_name in method_names:
+            candidate = getattr(self.sim_client, method_name, None)
+            if callable(candidate):
+                return candidate()
 
-    def _step_simulation(self) -> None:
-        raise NotImplementedError("Bind simulator step API here.")
-
-    def _stop_simulation(self) -> None:
-        raise NotImplementedError("Bind simulator stop API here.")
+        raise NotImplementedError(
+            "CoppeliaSim client must implement one of the methods: "
+            + ", ".join(method_names)
+            + "."
+        )
