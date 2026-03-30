@@ -5,7 +5,7 @@ from typing import Any
 
 from manipulator_framework.application.dto.pipeline_execution import PipelineExecutionSummary
 from manipulator_framework.application.dto.run_requests import RunRequest
-from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
+from manipulator_framework.core.experiments import RunArtifact, RunResult
 from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric, compute_success_rate
 
 
@@ -35,28 +35,28 @@ class RunResultFactory:
             # Convenience alias for the first cycle (kept for test/backwards compatibility)
             "cycle_index": execution_summary.cycle_results[0].cycle_index if execution_summary.cycle_results else 0,
             "final_cycle_index": execution_summary.final_cycle_result.cycle_index,
-            "final_cycle_message": execution_summary.final_cycle_result.message,
+            "final_cycle_events": list(execution_summary.final_cycle_result.events),
         }
         if extra_metadata:
             metadata.update(extra_metadata)
 
         return RunResult(
-            run_schema=RunSchema(
-                run_id=request.run_id,
-                experiment_name=experiment_name,
-                scenario_name=request.config.get("scenario_name", default_scenario_name),
-                backend_name=request.config.get("backend_name", "mock"),
-                seed=request.seed,
-                resolved_config=request.config,
-                tags=request.tags,
-                notes=request.notes,
-            ),
+            run_id=request.run_id,
+            success=execution_summary.success,
+            num_cycles=execution_summary.plan.num_cycles,
+            summary={
+                "experiment_name": experiment_name,
+                "scenario_name": request.config.get("scenario_name", default_scenario_name),
+                "backend_name": request.config.get("backend_name", "mock"),
+                **metadata,
+            },
             metrics=MetricsSnapshot(
                 scalar_metrics=(success_metric, *extra_scalar_metrics),
             ),
             artifacts=artifacts,
-            success=execution_summary.success,
-            started_at=execution_summary.started_at,
-            finished_at=execution_summary.finished_at,
-            metadata=metadata,
+            resolved_config=request.config,
+            seed=request.seed,
+            start_time=execution_summary.started_at,
+            end_time=execution_summary.finished_at,
+            cycle_results=execution_summary.cycle_results,
         )

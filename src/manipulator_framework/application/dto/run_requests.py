@@ -35,9 +35,15 @@ class RunPBVSWithTrackingRequest(RunRequest):
 @dataclass(frozen=True)
 class RunPBVSWithAvoidanceRequest(RunRequest):
     duration: float = 1.0
+    enable_avoidance: bool = True
 
 
 @dataclass(frozen=True)
 class BenchmarkControllersRequest(RunRequest):
     compared_methods: tuple[str, ...] = ()
     repetitions: int = 1
+
+
+@dataclass(frozen=True)
+class RunPBVSProtocolRequest:
+    protocol_path: str = "experiments/configs/pbvs_with_avoidance_protocol.yaml"

@@ -20,10 +20,16 @@ class VisualError:
     orientation_error: np.ndarray
 
     @property
+    def translation_error(self) -> float:
+        return float(np.linalg.norm(self.position_error))
+
+    @property
+    def orientation_error_norm(self) -> float:
+        return float(np.linalg.norm(self.orientation_error))
+
+    @property
     def norm(self) -> float:
-        return float(
-            np.linalg.norm(self.position_error) + np.linalg.norm(self.orientation_error)
-        )
+        return self.translation_error + self.orientation_error_norm
 
 
 def compute_pose_error(current: Pose3D, desired: Pose3D) -> VisualError:

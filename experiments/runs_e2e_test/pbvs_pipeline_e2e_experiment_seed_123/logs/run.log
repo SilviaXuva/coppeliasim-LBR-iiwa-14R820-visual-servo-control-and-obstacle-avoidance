@@ -1,0 +1,11 @@
+run_id=pbvs_pipeline_e2e_experiment_seed_123
+seed=123
+scenario=pbvs_with_avoidance_scene
+success=True
+num_cycles=20
+start_time=1775526708.4818728
+end_time=1775526709.4818728
+artifacts=0/1
+last_cycle_index=19
+last_cycle_success=True
+last_cycle_errors=0

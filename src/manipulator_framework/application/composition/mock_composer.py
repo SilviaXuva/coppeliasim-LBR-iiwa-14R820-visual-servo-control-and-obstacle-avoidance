@@ -18,6 +18,7 @@ from manipulator_framework.core.contracts import (
     ExecutionEngineInterface,
     ResultsRepositoryInterface,
 )
+from manipulator_framework.infrastructure.config.loader import YAMLConfigurationLoader
 
 
 @dataclass
@@ -42,7 +43,6 @@ class MockApplicationComposer:
             execution_engine=self.execution_engine,
             runtime_execution_service=self.build_runtime_execution_service(),
             experiment_service=self.build_experiment_service(),
-            run_result_factory=self.build_run_result_factory(),
         )
 
     def build_run_pbvs(self) -> RunPBVS:
@@ -50,7 +50,6 @@ class MockApplicationComposer:
             execution_engine=self.execution_engine,
             runtime_execution_service=self.build_runtime_execution_service(),
             experiment_service=self.build_experiment_service(),
-            run_result_factory=self.build_run_result_factory(),
         )
 
     def build_run_pbvs_with_tracking(self) -> RunPBVSWithTracking:
@@ -58,15 +57,24 @@ class MockApplicationComposer:
             execution_engine=self.execution_engine,
             runtime_execution_service=self.build_runtime_execution_service(),
             experiment_service=self.build_experiment_service(),
-            run_result_factory=self.build_run_result_factory(),
         )
 
     def build_run_pbvs_with_avoidance(self) -> RunPBVSWithAvoidance:
         return RunPBVSWithAvoidance(
+            robot=None,
+            camera=None,
+            marker_detector=None,
+            pose_estimator=None,
+            person_detector=None,
+            tracker=None,
+            pbvs_controller=None,
+            avoidance_module=None,
+            obstacle_source=None,
+            trajectory_follower=None,
+            config_service=YAMLConfigurationLoader(),
             execution_engine=self.execution_engine,
             runtime_execution_service=self.build_runtime_execution_service(),
             experiment_service=self.build_experiment_service(),
-            run_result_factory=self.build_run_result_factory(),
         )
 
     def build_benchmark_controllers(self) -> BenchmarkControllers:

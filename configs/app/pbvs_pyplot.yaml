@@ -1,0 +1,40 @@
+app:
+  mode: simulation
+  use_case: run_pbvs_with_avoidance
+
+runtime:
+  dt: 0.01
+  max_steps: 200
+  save_runtime_series: true
+
+experiment:
+  name: pbvs_pyplot_run
+  seed: 42
+  tags: [pyplot, pbvs, simulation]
+  notes: "PBVS pipeline using PyPlot backend selected by configuration."
+
+vision:
+  aruco_dictionary: DICT_4X4_50
+  marker_size: 0.1
+
+planning:
+  duration: 2.0
+  safe_distance: 0.5
+  enable_avoidance: true
+
+tracking:
+  mode: nearest_neighbor
+
+perception:
+  person_detector:
+    backend: stub
+
+simulation:
+  backend: pyplot
+  joint_names: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6, joint_7]
+  camera_id: pyplot_camera
+  camera_frame_id: camera
+
+results:
+  base_dir: experiments/runs
+

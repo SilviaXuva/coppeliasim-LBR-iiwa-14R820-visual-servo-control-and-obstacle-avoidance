@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 from roboticstoolbox import DHRobot, RevoluteDH
+from spatialmath import SE3
 
 from manipulator_framework.core.robot_model.iiwa14r820_model import Iiwa14R820Model
 
@@ -33,3 +34,10 @@ class RoboticsToolboxIiwaBackend:
         ]
         robot = DHRobot(links, name=self.model.name, manufacturer="KUKA")
         return robot
+
+    def solve_inverse_kinematics(self, *, target_matrix: np.ndarray, q0: np.ndarray):
+        matrix = np.asarray(target_matrix, dtype=float)
+        if matrix.shape != (4, 4):
+            raise ValueError("target_matrix must have shape (4, 4).")
+        robot = self.build_robot()
+        return robot.ikine_LM(SE3(matrix), q0=np.asarray(q0, dtype=float).reshape(-1))

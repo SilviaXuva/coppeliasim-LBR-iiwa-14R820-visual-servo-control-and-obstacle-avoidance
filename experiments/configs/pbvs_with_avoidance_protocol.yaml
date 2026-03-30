@@ -1,11 +1,41 @@
 name: pbvs_with_avoidance_protocol
 repetitions: 3
-seeds: [101, 102, 103]
+seeds: [2026, 2027, 2028]
 compared_methods:
-  - pbvs_baseline
-  - pbvs_with_avoidance
+  - pbvs_with_avoidance_official
+app_config: configs/app/pbvs_official.yaml
+notes: "Baseline protocol: person entering workspace under official real simulation pipeline."
+metrics:
+  - task_success
+  - final_visual_error
+  - minimum_clearance
+  - convergence_time
+  - num_cycles_total
+  - valid_detection_rate
 resolved_config:
   app:
     use_case: run_pbvs_with_avoidance
+  planning:
+    duration: 2.0
+    enable_avoidance: true
+  tracking:
+    mode: nearest_neighbor
+  experiment:
+    name: pbvs_with_avoidance_protocol
   scenario_name: person_in_workspace
   backend_name: coppeliasim
+  protocol_name: pbvs_with_avoidance_protocol
+  protocol_version: 1
+  perception:
+    person_detector:
+      backend: yolo
+      enabled: true
+    marker_detector:
+      backend: aruco
+      enabled: true
+  obstacle_avoidance:
+    kind: cuckoo_search
+    enabled: true
+  visual_servoing:
+    kind: pbvs
+    enabled: true

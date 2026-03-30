@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from manipulator_framework.core.experiments import RunArtifact, RunResult, RunSchema
-from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric
+from manipulator_framework.core.experiments import RunArtifact, RunResult
+from manipulator_framework.core.metrics import MetricsSnapshot, ScalarMetric, TimeSeriesSample
 from manipulator_framework.infrastructure.config.loader import YAMLConfigurationLoader
 from manipulator_framework.infrastructure.logging.run_logger import RunLogger
 from manipulator_framework.infrastructure.persistence.filesystem_results_repository import (
@@ -81,33 +81,40 @@ experiment:
     artifact_file = tmp_path / "artifact.txt"
     artifact_file.write_text(output["artifact_text"], encoding="utf-8")
 
+    tracking_series = tuple(
+        TimeSeriesSample(
+            t=float(sample["t"]),
+            values={"tracking_error": float(sample["tracking_error"])},
+        )
+        for sample in output["metrics_series"]
+    )
+
     result = RunResult(
-        run_schema=RunSchema(
-            run_id=run_id,
-            experiment_name=config["experiment"]["name"],
-            scenario_name="integration_scenario",
-            backend_name="mock",
-            seed=config["experiment"]["seed"],
-            resolved_config=config,
-            tags=tuple(config["experiment"]["tags"]),
-        ),
+        run_id=run_id,
+        success=output["summary"]["success"],
+        num_cycles=config["runtime"]["max_steps"],
+        summary={
+            "experiment_name": config["experiment"]["name"],
+            "scenario_name": "integration_scenario",
+            "backend_name": "mock",
+            "steps_executed": output["summary"]["steps_executed"],
+        },
         metrics=MetricsSnapshot(
             scalar_metrics=(
                 ScalarMetric(name="success_rate", value=1.0, unit="ratio"),
             ),
+            series={"tracking_error_series": tracking_series},
         ),
         artifacts=(
             RunArtifact(name="artifact.txt", path=str(artifact_file), kind="text"),
         ),
-        success=output["summary"]["success"],
-        started_at=0.0,
-        finished_at=1.0,
-        metadata={"steps_executed": output["summary"]["steps_executed"]},
+        resolved_config=config,
+        seed=config["experiment"]["seed"],
+        start_time=0.0,
+        end_time=1.0,
     )
 
-    repository.save_result(result)
-    repository.save_timeseries(run_id, "tracking_error_series", output["metrics_series"])
-    repository.save_artifact(run_id, "artifact.txt", str(artifact_file))
+    repository.save_run(result)
 
     run_dir = Path(config["results"]["base_dir"]) / run_id
     assert (run_dir / "config.yaml").exists()

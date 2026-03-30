@@ -10,3 +10,5 @@ Esta pasta é reservada para análise exploratória e visualização de resultad
 
 Sempre que um notebook gerar uma conclusão usada no projeto, a run correspondente
 deve existir em `experiments/runs/` e o relatório derivado deve ir para `experiments/reports/`.
+
+Notebook inicial real: experiments/notebooks/initial_analysis.ipynb.

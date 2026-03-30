@@ -1,20 +1,44 @@
-app:
-  mode: experiment
-  use_case: run_pbvs_with_avoidance
-
-runtime:
-  dt: 0.05
-  max_steps: 120
-  save_runtime_series: true
+# Experiment Config: Multi-stage PBVS with Avoidance
+# Baseline for Entrega 3 - Operational Simulation Line
 
 experiment:
-  name: pbvs_with_avoidance_experiment
+  name: pbvs_with_avoidance_baseline
+  description: "Benchmarking PBVS vs PBVS + Cuckoo Search in CoppeliaSim."
   seed: 123
-  tags: [experiment, pbvs, avoidance]
-  notes: "Default experiment app configuration."
+  tags: [simulation, baseline, pbvs, avoidance]
 
-scenario:
-  name: person_in_workspace
+planning:
+  duration: 5.0
+  dt: 0.05
+
+simulation:
+  use_camera: true
+  robot_handle: "LBR_iiwa_14_R820"
+  camera_handle: "vision_sensor"
+  joint_names:
+    - "joint_1"
+    - "joint_2"
+    - "joint_3"
+    - "joint_4"
+    - "joint_5"
+    - "joint_6"
+    - "joint_7"
+
+perception:
+  kind: "aruco"
+  dictionary_name: "DICT_4X4_50"
+  marker_id: 10
+  marker_length_m: 0.08
+
+visual_servoing:
+  kind: "pbvs"
+  gain: 1.0
+
+obstacle_avoidance:
+  kind: "cuckoo_search"
+  safe_distance: 0.4
+  enabled: true
 
 results:
-  base_dir: experiments/runs
+  base_dir: "experiments/runs"
+  persistence: "filesystem"

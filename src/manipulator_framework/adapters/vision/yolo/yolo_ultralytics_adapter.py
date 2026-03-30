@@ -146,3 +146,10 @@ class YoloUltralyticsAdapter(PersonDetectorInterface):
         if hasattr(value, "numpy"):
             value = value.numpy()
         return np.asarray(value)
+
+
+@dataclass
+class YoloUltralyticsPersonDetectorAdapter(YoloUltralyticsAdapter):
+    """
+    Backward/semantic alias for the person-detection role in composition roots.
+    """

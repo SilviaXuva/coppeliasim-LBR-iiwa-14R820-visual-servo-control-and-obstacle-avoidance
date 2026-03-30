@@ -28,11 +28,13 @@ class RunRequestFactory:
         )
 
     def build_experiment_request(self) -> RunPBVSWithAvoidanceRequest:
+        planning_cfg = self.config.get("planning", {})
         return RunPBVSWithAvoidanceRequest(
             run_id=self._build_run_id("experiment"),
             config=deepcopy(self.config),
             seed=int(self.config.get("experiment", {}).get("seed", 0)),
-            duration=float(self.config.get("planning", {}).get("duration", 1.0)),
+            duration=float(planning_cfg.get("duration", 1.0)),
+            enable_avoidance=bool(planning_cfg.get("enable_avoidance", True)),
         )
 
     def build_benchmark_request(self) -> BenchmarkControllersRequest:

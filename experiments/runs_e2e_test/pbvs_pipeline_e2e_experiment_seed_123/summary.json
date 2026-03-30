@@ -1,0 +1,50 @@
+{
+  "final_cycle_index": 19,
+  "final_cycle_success": true,
+  "total_errors": 0,
+  "sampling_period_s": 0.05,
+  "sampling_frequency_hz": 20.0,
+  "final_visual_error": 0.09999999999999998,
+  "final_joint_error": 0.01058300524425836,
+  "visual_success": true,
+  "planned_duration": 1.0,
+  "planned_dt": 0.05,
+  "planned_num_cycles": 20,
+  "task_success": true,
+  "minimum_clearance": 0.2,
+  "convergence_time": 1.0,
+  "num_cycles_total": 20,
+  "valid_detection_rate": 0.0,
+  "experiment_name": "run_pbvs_with_avoidance",
+  "scenario_name": "pbvs_with_avoidance_scene",
+  "backend_name": "mock",
+  "pipeline_kind": "official_pbvs_with_avoidance",
+  "pipeline_stages": [
+    "sensing",
+    "perception",
+    "estimation",
+    "visual_servo",
+    "avoidance_disabled",
+    "control",
+    "actuation",
+    "metrics_collection"
+  ],
+  "avoidance_enabled": false,
+  "control_dt": 0.05,
+  "seed": 123,
+  "tracking_mode": "nearest_neighbor",
+  "run_id": "pbvs_pipeline_e2e_experiment_seed_123",
+  "success": true,
+  "num_cycles": 20,
+  "start_time": 1775526708.4818728,
+  "end_time": 1775526709.4818728,
+  "duration": 1.0,
+  "artifacts": [
+    {
+      "name": "scientific_summary",
+      "path": "experiments/runs/pbvs_pipeline_e2e_experiment_seed_123/summary.json",
+      "kind": "json",
+      "description": "Full PBVS-Avoidance scientific report."
+    }
+  ]
+}

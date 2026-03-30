@@ -62,8 +62,8 @@ def test_execution_engine_real_pipeline_returns_cycle_result_object() -> None:
     assert cycle_result.cycle_index == 0
     assert cycle_result.success is True
     assert cycle_result.timestamp == 10.0
-    assert len(cycle_result.step_results) == 3
-    assert tuple(item.step_name for item in cycle_result.step_results) == (
+    assert len(cycle_result.events) == 3
+    assert tuple(event.split(":")[0] for event in cycle_result.events) == (
         "sensing",
         "planning",
         "control",
@@ -86,12 +86,12 @@ def test_execution_engine_stops_pipeline_after_first_failure() -> None:
 
     assert cycle_result.cycle_index == 0
     assert cycle_result.success is False
-    assert len(cycle_result.step_results) == 2
-    assert tuple(item.step_name for item in cycle_result.step_results) == (
+    assert len(cycle_result.events) == 2
+    assert tuple(event.split(":")[0] for event in cycle_result.events) == (
         "sensing",
         "planning",
     )
-    assert cycle_result.step_results[-1].message == "planning failed."
+    assert cycle_result.errors[-1] == "planning failed."
 
 
 def test_run_joint_trajectory_with_real_execution_engine_persists_run_result() -> None:
@@ -126,7 +126,7 @@ def test_run_joint_trajectory_with_real_execution_engine_persists_run_result() -
     )
 
     assert response.run_result.success is True
-    assert response.run_result.run_schema.experiment_name == "run_joint_trajectory"
-    assert response.run_result.metadata["cycle_index"] == 0
+    assert response.run_result.summary["experiment_name"] == "run_joint_trajectory"
+    assert response.run_result.summary["final_cycle_index"] == 9
     assert len(repository.saved_results) == 1
     assert repository.saved_results[0] == response.run_result

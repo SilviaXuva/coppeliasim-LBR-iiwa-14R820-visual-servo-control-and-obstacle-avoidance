@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 
 from manipulator_framework.core.types import ObstacleState, RobotState, Trajectory
 from .avoidance_costs import compute_clearance_cost
 from .obstacle_models import AvoidanceResult
+from .reference_adapter import TrajectoryReferenceAdapter
+from ..contracts.obstacle_interfaces import ObstacleAvoidanceInterface
 
 
 @dataclass
-class CuckooSearchAvoidance:
+class CuckooSearchAvoidance(ObstacleAvoidanceInterface):
     """
     Pure avoidance module skeleton.
 
@@ -19,6 +21,20 @@ class CuckooSearchAvoidance:
     """
     safe_distance: float = 0.6
     candidate_scale: float = 0.05
+    _adapter: TrajectoryReferenceAdapter = field(default_factory=TrajectoryReferenceAdapter, init=False, repr=False)
+
+    def adapt_trajectory(
+        self,
+        reference: Trajectory,
+        obstacles: list[ObstacleState],
+        robot_state: RobotState,
+    ) -> Trajectory:
+        avoidance_result = self.adapt_reference(
+            reference=reference,
+            obstacles=obstacles,
+            robot_state=robot_state,
+        )
+        return self._adapter.adapt(reference, avoidance_result)
 
     def adapt_reference(
         self,

@@ -53,15 +53,12 @@ def test_fake_execution_engine_matches_concrete_step_contract() -> None:
     assert fake_result.cycle_index == 0
     assert concrete_result.cycle_index == 0
 
-    assert all(isinstance(item, StepResult) for item in fake_result.step_results)
-    assert all(isinstance(item, StepResult) for item in concrete_result.step_results)
-
-    assert tuple(item.step_name for item in fake_result.step_results) == (
+    assert tuple(event.split(":")[0] for event in fake_result.events) == (
         "sensing",
         "planning",
         "control",
     )
-    assert tuple(item.step_name for item in concrete_result.step_results) == (
+    assert tuple(event.split(":")[0] for event in concrete_result.events) == (
         "sensing",
         "planning",
         "control",

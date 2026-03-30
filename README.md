@@ -75,6 +75,22 @@ Use when running Ultralytics-based detectors:
 pip install -e ".[yolo]"
 ```
 
+### Simulation
+
+Use when running the official CoppeliaSim-based experimental flow (sim backend + person detection + test runner):
+
+```bash
+pip install -e ".[simulation]"
+```
+
+### ROS 2
+
+Use as a marker extra for ROS 2 workflows managed by your ROS environment:
+
+```bash
+pip install -e ".[ros2]"
+```
+
 ### Full local environment
 
 Use when you want the broadest local setup for current simulation, vision and testing workflows:
@@ -90,6 +106,53 @@ pip install -e ".[full]"
 * `opencv-contrib-python` is used instead of `opencv-python` because ArUco requires `cv2.aruco`.
 * ROS 2 dependencies are intentionally **not** declared here as normal pip dependencies, because they are typically managed by the ROS 2 environment itself and must remain isolated at the framework edge.
 
+## Official experimental campaign profile
+
+The official reproducible profile for the base campaign is:
+
+```bash
+pip install -e ".[robotics,vision,simulation]"
+```
+
+This is the environment expected to run:
+
+* base pipeline
+* integration tests
+* relevant regression tests
+
+## Reproducible commands (clean environment)
+
+Install official profile:
+
+```bash
+pip install -e ".[robotics,vision,simulation]"
+```
+
+Run official experimental suite:
+
+```bash
+run-experimental-suite
+```
+
+Run main simulation app:
+
+```bash
+run-main-simulation
+```
+
+Run frozen base experiment protocol (3 fixed repetitions):
+
+```bash
+run-base-protocol
+```
+
+Equivalent direct commands:
+
+```bash
+python -m pytest tests/unit tests/integration tests/regression
+python -m manipulator_framework.apps.simulation_app configs/app/pbvs_official.yaml
+```
+
 ## Current packaging limitation
 
 The package metadata is now aligned with the code dependencies, but the current apps still resolve YAML files from the repository tree such as `configs/app/*.yaml`.
@@ -102,8 +165,21 @@ That means the cleanest supported workflow for now is:
 Example:
 
 ```bash
-pip install -e ".[full]"
-python -m manipulator_framework.apps.simulation_app
+pip install -e ".[robotics,vision,simulation]"
+python -m manipulator_framework.apps.simulation_app configs/app/pbvs_official.yaml
+```
+
+## Maintenance Tools
+
+The framework provides scripts for configuration validation and metrics analysis:
+
+- `validate-configs`: Validates all YAML files in the `configs/` directory.
+- `export-metrics`: Processes run results into human-readable formats.
+- `compare-runs`: Benchmarks different experimental runs.
+
+To run validation:
+```bash
+validate-configs
 ```
 
 Packaging config files as package resources can be treated later as an app/composition hardening step, but it is intentionally not mixed into this dependency correction stage.

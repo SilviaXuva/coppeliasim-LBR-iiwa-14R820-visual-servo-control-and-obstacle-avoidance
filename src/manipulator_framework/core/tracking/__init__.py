@@ -4,6 +4,7 @@ from .prediction import ConstantPositionPredictor
 from .update import TrackUpdater
 from .lifecycle import TrackLifecyclePolicy
 from .nearest_neighbor_tracker import NearestNeighborTracker
+from .null_tracker import NullTracker
 
 __all__ = [
     "TrackState",
@@ -13,4 +14,5 @@ __all__ = [
     "TrackUpdater",
     "TrackLifecyclePolicy",
     "NearestNeighborTracker",
+    "NullTracker",
 ]

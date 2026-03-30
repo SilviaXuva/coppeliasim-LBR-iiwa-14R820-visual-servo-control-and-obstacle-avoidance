@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from manipulator_framework.core.contracts import VisualServoInterface
 from manipulator_framework.core.obstacle_avoidance.cuckoo_search_avoidance import CuckooSearchAvoidance
 from manipulator_framework.core.obstacle_avoidance.reference_adapter import TrajectoryReferenceAdapter
 from manipulator_framework.core.types import ObstacleState, Pose3D, RobotState, Trajectory
-from .pbvs_controller import PBVSController
 from .visual_error import VisualError
 
 
@@ -14,7 +14,7 @@ class PBVSAvoidanceComposer:
     """
     Minimal composition layer for PBVS + obstacle avoidance.
     """
-    pbvs_controller: PBVSController
+    pbvs_controller: VisualServoInterface
     avoidance: CuckooSearchAvoidance
     trajectory_adapter: TrajectoryReferenceAdapter
 

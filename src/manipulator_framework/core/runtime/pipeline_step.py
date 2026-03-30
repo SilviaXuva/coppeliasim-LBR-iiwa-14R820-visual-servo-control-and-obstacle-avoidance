@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .cycle_contract import StepResult
+from manipulator_framework.core.types.execution import StepResult
 from .runtime_context import RuntimeContext
 
 

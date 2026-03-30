@@ -1,0 +1,28 @@
+# Scenario: Pick and Place Simulation
+# defines a sequence of target points for a pick and place mission.
+
+scenario_id: "pick_place_sim"
+description: "Simple pick and place between two targets in joint space."
+
+targets:
+  - id: "pick_point"
+    joint_angles: [0.0, 0.45, 0.0, -1.2, 0.0, 1.2, 0.0]
+    dwell_time: 2.0
+    action: "close_gripper"
+
+  - id: "place_point"
+    joint_angles: [0.8, 0.45, 0.0, -1.2, 0.0, 1.2, 0.0]
+    dwell_time: 2.0
+    action: "open_gripper"
+
+  - id: "home"
+    joint_angles: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+simulation:
+  scene_file: "pick_place_basic.ttt"
+  robot_initial_joint_angles: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  objects:
+    - name: "cube_01"
+      type: "cube"
+      position: [0.5, 0.0, 0.02]
+      size: [0.04, 0.04, 0.04]

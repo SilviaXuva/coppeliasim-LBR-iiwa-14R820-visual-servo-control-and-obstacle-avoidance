@@ -72,4 +72,7 @@ DEFAULT_CONFIG: dict = {
         "population_size": 15,
         "max_iterations": 20,
     },
+    "tracking": {
+        "mode": "nearest_neighbor",
+    },
 }

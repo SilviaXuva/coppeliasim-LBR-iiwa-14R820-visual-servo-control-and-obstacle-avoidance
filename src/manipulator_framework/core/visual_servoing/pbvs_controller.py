@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from manipulator_framework.core.contracts import VisualServoInterface
 from manipulator_framework.core.types import Pose3D, RobotState, Trajectory
 from .reference_generation import PBVSReferenceGenerator
 from .visual_error import VisualError, compute_pose_error
 
 
 @dataclass
-class PBVSController:
+class PBVSController(VisualServoInterface):
     """
     Pure PBVS controller.
 
@@ -34,3 +35,6 @@ class PBVSController:
             dt=dt,
         )
         return visual_error, trajectory
+
+    def reset(self) -> None:
+        return None

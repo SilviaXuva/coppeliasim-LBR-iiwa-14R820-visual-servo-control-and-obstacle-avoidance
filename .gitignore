@@ -1,18 +1,14 @@
 **/__pycache__/*
-.venv/
-venv/
 .vscode/
 .env/
 .pytest_cache/
+.pytest_temp/
 
-outputs/
-
-*.pt
-*.log
-*.py[cod]
 *.egg-info
 
 experiments/runs/*
 !experiments/runs/.gitkeep
-experiments/tmp_*.txt
-experiments/reports/
+experiments/reports/*
+!experiments/reports/.gitkeep
+experiments/figures/*
+!experiments/figures/.gitkeep

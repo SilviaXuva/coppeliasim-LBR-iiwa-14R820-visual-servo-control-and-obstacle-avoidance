@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from manipulator_framework.core.contracts import ControllerInterface
-from .cycle_contract import StepResult
+from manipulator_framework.core.types.execution import StepResult
 from .pipeline_step import PipelineStep
 from .runtime_context import RuntimeContext
 

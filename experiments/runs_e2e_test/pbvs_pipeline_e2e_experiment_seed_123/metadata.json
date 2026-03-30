@@ -1,0 +1,118 @@
+{
+  "run_id": "pbvs_pipeline_e2e_experiment_seed_123",
+  "success": true,
+  "num_cycles": 20,
+  "seed": 123,
+  "resolved_config": {
+    "app": {
+      "name": "manipulator_framework",
+      "mode": "experiment",
+      "use_case": "run_pbvs_with_avoidance"
+    },
+    "runtime": {
+      "dt": 0.05,
+      "max_steps": 20,
+      "save_runtime_series": true
+    },
+    "logging": {
+      "level": "INFO",
+      "save_to_file": true
+    },
+    "results": {
+      "base_dir": "C:/Users/silvi/Documents/Professional/UFSCar/Master/00_repo/vsc-and-oa-lbr-iiwa/experiments/runs_e2e_test"
+    },
+    "experiment": {
+      "name": "pbvs_pipeline_e2e",
+      "seed": 123,
+      "tags": [],
+      "notes": ""
+    },
+    "scenario": {
+      "name": "synthetic_joint_trajectory"
+    },
+    "controller": {
+      "kind": "joint_pd",
+      "gains": {
+        "kp": 10.0,
+        "kd": 1.0,
+        "ki": 0.0
+      },
+      "limits": {
+        "max_velocity": 1.0,
+        "max_acceleration": 2.0
+      }
+    },
+    "planning": {
+      "kind": "quintic_joint_trajectory",
+      "duration": 1.0
+    },
+    "visual_servoing": {
+      "enabled": false,
+      "kind": "pbvs",
+      "target_frame": "aruco_target",
+      "camera_frame": "camera",
+      "gain": 0.8
+    },
+    "perception": {
+      "person_detector": {
+        "enabled": false,
+        "backend": "yolo",
+        "model_name": "yolo11n",
+        "confidence_threshold": 0.5
+      },
+      "marker_detector": {
+        "enabled": false,
+        "backend": "aruco",
+        "dictionary": "DICT_4X4_50",
+        "marker_length_m": 0.05
+      }
+    },
+    "obstacle_avoidance": {
+      "enabled": false,
+      "kind": "cuckoo_search",
+      "weight": 1.0,
+      "clearance_m": 0.2,
+      "population_size": 15,
+      "max_iterations": 20
+    },
+    "tracking": {
+      "mode": "nearest_neighbor"
+    }
+  },
+  "summary": {
+    "final_cycle_index": 19,
+    "final_cycle_success": true,
+    "total_errors": 0,
+    "sampling_period_s": 0.05,
+    "sampling_frequency_hz": 20.0,
+    "final_visual_error": 0.09999999999999998,
+    "final_joint_error": 0.01058300524425836,
+    "visual_success": true,
+    "planned_duration": 1.0,
+    "planned_dt": 0.05,
+    "planned_num_cycles": 20,
+    "task_success": true,
+    "minimum_clearance": 0.2,
+    "convergence_time": 1.0,
+    "num_cycles_total": 20,
+    "valid_detection_rate": 0.0,
+    "experiment_name": "run_pbvs_with_avoidance",
+    "scenario_name": "pbvs_with_avoidance_scene",
+    "backend_name": "mock",
+    "pipeline_kind": "official_pbvs_with_avoidance",
+    "pipeline_stages": [
+      "sensing",
+      "perception",
+      "estimation",
+      "visual_servo",
+      "avoidance_disabled",
+      "control",
+      "actuation",
+      "metrics_collection"
+    ],
+    "avoidance_enabled": false,
+    "control_dt": 0.05,
+    "seed": 123,
+    "tracking_mode": "nearest_neighbor"
+  }
+}

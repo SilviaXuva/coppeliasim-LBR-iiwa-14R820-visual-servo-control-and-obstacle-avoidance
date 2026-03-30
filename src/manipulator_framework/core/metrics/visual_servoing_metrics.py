@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from manipulator_framework.core.metrics.metric_models import ScalarMetric
+from manipulator_framework.core.types.metrics import ScalarMetric
 from manipulator_framework.core.types import Pose3D
 
 

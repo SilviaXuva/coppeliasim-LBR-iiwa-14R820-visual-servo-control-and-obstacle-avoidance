@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from manipulator_framework.core.contracts import PersonDetectorInterface, TrackerInterface
-from .cycle_contract import StepResult
+from manipulator_framework.core.contracts import (
+    PersonDetectorInterface,
+    PoseEstimatorInterface,
+    TrackerInterface,
+)
+from manipulator_framework.core.types.execution import StepResult
 from .pipeline_step import PipelineStep
 from .runtime_context import RuntimeContext
 
@@ -11,6 +15,7 @@ from .runtime_context import RuntimeContext
 @dataclass
 class EstimationStep(PipelineStep):
     person_detector: PersonDetectorInterface
+    target_estimator: PoseEstimatorInterface
     tracker: TrackerInterface
 
     @property
@@ -27,7 +32,15 @@ class EstimationStep(PipelineStep):
             )
 
         context.person_detections = list(self.person_detector.detect_people(context.camera_frame))
-        context.tracked_targets = list(self.tracker.update(context.person_detections, context.timestamp))
+        estimated_targets = [
+            target
+            for target in (
+                self.target_estimator.estimate_person_target(detection)
+                for detection in context.person_detections
+            )
+            if target is not None
+        ]
+        context.tracked_targets = list(self.tracker.update(estimated_targets, context.timestamp))
 
         return StepResult(
             step_name=self.name,

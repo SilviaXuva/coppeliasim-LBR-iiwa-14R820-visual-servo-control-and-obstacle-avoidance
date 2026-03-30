@@ -5,6 +5,8 @@ from .vision import CameraFrame, Detection2D, MarkerDetection, PersonDetection
 from .tracking import TrackedTarget, ObstacleState
 from .planning import Trajectory, TrajectorySample
 from .control import ControlOutput
+from .execution import CycleResult, StepResult
+from .metrics import MetricsSnapshot, ScalarMetric, TimeSeriesSample
 
 __all__ = [
     "CommandMode",
@@ -25,4 +27,9 @@ __all__ = [
     "Trajectory",
     "TrajectorySample",
     "ControlOutput",
+    "CycleResult",
+    "StepResult",
+    "MetricsSnapshot",
+    "ScalarMetric",
+    "TimeSeriesSample",
 ]

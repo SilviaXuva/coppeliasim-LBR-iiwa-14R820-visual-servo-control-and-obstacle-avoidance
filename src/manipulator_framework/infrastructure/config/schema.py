@@ -166,3 +166,12 @@ def validate_config_dict(config: dict[str, Any]) -> None:
         "max_iterations",
         "obstacle_avoidance.max_iterations",
     )
+
+    tracking = config.get("tracking", {"mode": "nearest_neighbor"})
+    if not isinstance(tracking, dict):
+        raise ConfigurationValidationError("'tracking' section must be a mapping when provided.")
+    tracking_mode = str(tracking.get("mode", "nearest_neighbor")).lower()
+    if tracking_mode not in {"nearest_neighbor", "nearest-neighbor", "nn", "none", "null", "disabled"}:
+        raise ConfigurationValidationError(
+            "'tracking.mode' must be one of: nearest_neighbor, nearest-neighbor, nn, none, null, disabled."
+        )

@@ -1,63 +1,66 @@
 # Experiments
 
-Este diretório contém apenas artefatos experimentais externos ao core.
+This directory contains experimental artifacts, run results, and analytical tools external to the framework core.
 
-## Estrutura mínima
+## Structure
 
-- `configs/`: protocolos experimentais versionados
-- `scenarios/`: cenários versionados
-- `runs/`: saídas persistidas de execuções
-- `reports/`: relatórios gerados a partir das runs
-- `notebooks/`: análises exploratórias
-- `figures/`: figuras exportadas
+- `configs/`: Versioned experimental protocols and factor definitions.
+- `scenarios/`: Versioned environment definitions (scenes, targets, obstacles).
+- `runs/`: Persistence for all execution outputs, organized by `run_id`.
+- `reports/`: Aggregated reports and performance summaries.
+- `notebooks/`: Jupyter notebooks for exploratory data analysis and visualization.
+- `figures/`: Exported plots, diagrams, and figures for papers/thesis.
 
-## Regras
+## Core Rules
 
-- `experiments/` não substitui `core/experiments`
-- protocolo e cenário continuam modelados no core
-- esta pasta guarda apenas definição externa e artefatos
-- benchmark não é demo
-- demo não é teste
-- execução deve sempre persistir em `experiments/runs/<run_id>/`
+1. **Separation of Concerns**: This directory keeps external definitions and artifacts. The experimental logic (protocol, results model) remains in `src/manipulator_framework/core/experiments/`.
+2. **Benchmark != Demo != Test**: Benchmarks are for scientific comparison, demos are for manual validation, and tests are for software correctness.
+3. **Traceability**: Every run must persist in `experiments/runs/<run_id>/` with its configuration, metadata, and metric series.
 
-## Scripts mínimos
+## Maintenance Tools
 
-### Exportar visão consolidada das métricas
+The framework provides several CLI tools for experimental maintenance:
 
+### Validate Configurations
+Ensure your YAML protocols and scenarios are syntactically correct:
 ```bash
-python scripts/export_metrics.py
+validate-configs
 ```
 
-### Comparar runs específicas
+### Export Metrics
+Consolidate metrics from multiple runs into CSV or Parquet for analysis:
 ```bash
-python scripts/compare_runs.py run_a run_b
+export-metrics --run-dir experiments/runs --output experiments/reports/summary.csv
+```
+
+### Compare Runs
+Perform a detailed comparison between specific experimental runs:
+```bash
+compare-runs run_baseline_pd run_adaptive_pd
+```
+
+### Run Base Protocol (Official)
+Run the frozen base experiment protocol (3 repetitions with fixed seeds) and generate a comparison report:
+```bash
+run-base-protocol
 ```
 
 ---
 
-### **Arquivo novo**
+## Sample Protocol
 `experiments/configs/pbvs_with_avoidance_protocol.yaml`
 
-#### Conteúdo completo
 ```yaml
 name: pbvs_with_avoidance_protocol
 repetitions: 3
-seeds: [101, 102, 103]
-compared_methods:
-  - pbvs_baseline
-  - pbvs_with_avoidance
-resolved_config:
-  app:
-    use_case: run_pbvs_with_avoidance
-  scenario_name: person_in_workspace
-  backend_name: coppeliasim
-  planning:
-    duration: 2.0
-  visual_servoing:
-    enabled: true
-    kind: pbvs
-    gain: 0.9
-  obstacle_avoidance:
-    enabled: true
-    kind: cuckoo_search
-    clearance_m: 0.20
+seeds: [2026, 2027, 2028]
+compared_methods: [pbvs_with_avoidance_official]
+app_config: configs/app/pbvs_official.yaml
+metrics:
+  - task_success
+  - final_visual_error
+  - minimum_clearance
+  - convergence_time
+  - num_cycles_total
+  - valid_detection_rate
+```

@@ -13,6 +13,7 @@ class ControllerInterface(ABC):
         self,
         robot_state: RobotState,
         reference: TrajectorySample,
+        dt: float,
     ) -> ControlOutput:
         raise NotImplementedError
 

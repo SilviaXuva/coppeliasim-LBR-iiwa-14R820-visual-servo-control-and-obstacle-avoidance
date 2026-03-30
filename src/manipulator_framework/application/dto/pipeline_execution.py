@@ -47,8 +47,8 @@ class PipelineExecutionSummary:
                     "t": result.timestamp,
                     "cycle_index": result.cycle_index,
                     "success": 1.0 if result.success else 0.0,
-                    "num_steps": float(len(result.step_results)),
-                    "message": result.message,
+                    "num_events": float(len(result.events)),
+                    "num_errors": float(len(result.errors)),
                 }
             )
         return samples

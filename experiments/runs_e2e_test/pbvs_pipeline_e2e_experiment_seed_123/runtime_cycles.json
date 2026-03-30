@@ -1,0 +1,242 @@
+[
+  {
+    "t": 1775526708.4818728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.5318727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.5818727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.631873,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.6818728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.7318728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.7818727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.8318727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.881873,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.9318728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526708.9818728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.0318727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.0818727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.131873,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.1818728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.2318728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.2818727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.3318727,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.381873,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  },
+  {
+    "t": 1775526709.4318728,
+    "values": {
+      "success": 1.0,
+      "events": 8.0,
+      "errors": 0.0,
+      "num_markers_detected": 1.0,
+      "visual_translation_error": 0.09999999999999998,
+      "visual_error": 0.0,
+      "joint_error": 0.01058300524425836
+    }
+  }
+]
