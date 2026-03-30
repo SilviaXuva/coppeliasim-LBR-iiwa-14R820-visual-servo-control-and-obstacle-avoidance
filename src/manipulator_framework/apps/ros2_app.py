@@ -13,7 +13,15 @@ def main() -> int:
     composer = ROS2Composer(config=config)
     ros_runtime = composer.build_ros2_runtime()
 
-    ros_runtime.spin()
+    outputs = ros_runtime.spin(num_cycles=1)
+
+    if outputs["robot_state"] is not None:
+        print("[ros2_app] published robot_state")
+    if outputs["camera_frame"] is not None:
+        print("[ros2_app] published camera_frame")
+    if outputs["person_detections"] is not None:
+        print("[ros2_app] published person_detections")
+
     return 0
 
 

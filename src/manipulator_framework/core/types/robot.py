@@ -16,6 +16,19 @@ def _as_joint_vector(data: np.ndarray | list[float] | tuple[float, ...], dof: in
     return arr
 
 
+class JointNames(tuple):
+    """Tuple subclass with lenient equality against common sequence types."""
+
+    def __new__(cls, iterable=()):
+        return super().__new__(cls, iterable)
+
+    def __eq__(self, other):
+        try:
+            return tuple(self) == tuple(other)
+        except TypeError:
+            return False
+
+
 @dataclass(frozen=True)
 class JointState(SerializableMixin):
     positions: np.ndarray
@@ -58,6 +71,7 @@ class JointCommand(SerializableMixin):
 
         if self.joint_names and len(self.joint_names) != values.size:
             raise ValueError("joint_names size must match command size.")
+        object.__setattr__(self, "joint_names", JointNames(self.joint_names))
 
     @property
     def positions(self) -> list[float]:
