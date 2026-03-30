@@ -6,18 +6,18 @@ from manipulator_framework.application.composition.simulation_composer import (
 from manipulator_framework.infrastructure.config.loader import YAMLConfigurationLoader
 
 
-def main() -> int:
+def main(config_path: str = "configs/app/benchmark.yaml") -> int:
     """Run the benchmark app entrypoint."""
     loader = YAMLConfigurationLoader()
-    raw_config = loader.load("configs/app/benchmark.yaml")
+    raw_config = loader.load(config_path)
     config = loader.resolve(raw_config)
 
     composer = SimulationComposer(config=config)
     use_case = composer.build_benchmark_use_case()
 
-    result = use_case.execute(config)
+    response = use_case.execute(config)
 
-    print(f"Benchmark finished. run_id={result.run_id}")
+    print(f"Benchmark finished. compared_methods={len(response.summary)}")
     return 0
 
 
