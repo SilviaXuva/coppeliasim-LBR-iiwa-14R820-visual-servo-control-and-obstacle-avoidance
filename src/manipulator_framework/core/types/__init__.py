@@ -5,7 +5,6 @@ from .vision import CameraFrame, Detection2D, MarkerDetection, PersonDetection
 from .tracking import TrackedTarget, ObstacleState
 from .planning import Trajectory, TrajectorySample
 from .control import ControlOutput
-from .experiment import ExperimentResult
 
 __all__ = [
     "CommandMode",
@@ -26,5 +25,4 @@ __all__ = [
     "Trajectory",
     "TrajectorySample",
     "ControlOutput",
-    "ExperimentResult",
 ]

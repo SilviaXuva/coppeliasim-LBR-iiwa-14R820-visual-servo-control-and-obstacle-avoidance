@@ -32,6 +32,8 @@ class RunResultFactory:
             "num_cycles": execution_summary.plan.num_cycles,
             "dt": execution_summary.plan.dt,
             "duration": execution_summary.plan.duration,
+            # Convenience alias for the first cycle (kept for test/backwards compatibility)
+            "cycle_index": execution_summary.cycle_results[0].cycle_index if execution_summary.cycle_results else 0,
             "final_cycle_index": execution_summary.final_cycle_result.cycle_index,
             "final_cycle_message": execution_summary.final_cycle_result.message,
         }

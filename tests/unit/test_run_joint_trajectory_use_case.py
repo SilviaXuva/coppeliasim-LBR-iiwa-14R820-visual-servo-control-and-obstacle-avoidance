@@ -25,4 +25,6 @@ def test_run_joint_trajectory_returns_run_result() -> None:
 
     assert response.run_result.success is True
     assert response.run_result.run_schema.experiment_name == "run_joint_trajectory"
+    assert response.run_result.metadata["cycle_index"] == 0
     assert len(repository.saved_results) == 1
+    assert repository.saved_results[0] == response.run_result

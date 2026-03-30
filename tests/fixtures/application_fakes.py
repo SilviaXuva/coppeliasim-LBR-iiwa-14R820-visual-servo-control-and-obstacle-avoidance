@@ -42,30 +42,65 @@ class FakeClock(ClockInterface):
 
 class FakeExecutionEngine(ExecutionEngineInterface):
     """
-    Minimal fake execution engine for application-layer examples.
+    Fake execution engine aligned with the real engine contract.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        success: bool = True,
+        step_names: tuple[str, ...] = ("sensing", "planning", "control"),
+        timestamp: float = 0.0,
+        failure_step_index: int | None = None,
+    ) -> None:
         self._cycle = 0
+        self._success = bool(success)
+        self._step_names = tuple(step_names)
+        self._timestamp = float(timestamp)
+        self._failure_step_index = failure_step_index
 
     def step(self) -> CycleResult:
+        step_results: list[StepResult] = []
+
+        for index, step_name in enumerate(self._step_names):
+            step_success = self._success
+            if self._failure_step_index is not None and index == self._failure_step_index:
+                step_success = False
+
+            step_results.append(
+                StepResult(
+                    step_name=step_name,
+                    success=step_success,
+                    message=(
+                        f"{step_name} completed."
+                        if step_success
+                        else f"{step_name} failed."
+                    ),
+                    timestamp=self._timestamp,
+                )
+            )
+
+            if not step_success:
+                break
+
+        overall_success = all(item.success for item in step_results)
         result = CycleResult(
             cycle_index=self._cycle,
-            success=True,
-            step_results=(
-                StepResult(step_name="sensing", success=True, timestamp=0.0),
-                StepResult(step_name="planning", success=True, timestamp=0.0),
-                StepResult(step_name="control", success=True, timestamp=0.0),
+            success=overall_success,
+            step_results=tuple(step_results),
+            timestamp=self._timestamp,
+            message=(
+                "Fake cycle completed."
+                if overall_success
+                else "Fake cycle failed."
             ),
-            timestamp=0.0,
-            message="Fake cycle completed.",
         )
         self._cycle += 1
         return result
 
     def run(self, num_cycles: int = 1) -> tuple[CycleResult, ...]:
-        if num_cycles < 0:
-            raise ValueError("num_cycles must be non-negative.")
+        if num_cycles <= 0:
+            raise ValueError("num_cycles must be greater than zero.")
 
         results: list[CycleResult] = []
         for _ in range(num_cycles):
@@ -79,7 +114,7 @@ class FakeExecutionEngine(ExecutionEngineInterface):
 @dataclass
 class InMemoryResultsRepository(ResultsRepositoryInterface):
     """
-    In-memory repository for tests and examples.
+    In-memory repository aligned with the consolidated RunResult contract.
     """
 
     saved_results: list[RunResult] = field(default_factory=list)
