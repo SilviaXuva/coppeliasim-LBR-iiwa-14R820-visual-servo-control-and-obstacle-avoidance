@@ -9,13 +9,24 @@ description = "Scientific robotics framework for visual servoing, perception, tr
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "Your Name" }
+  { name = "Silvia Nakamura" }
 ]
 dependencies = [
   "numpy>=1.26",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
+
+lint = [
+  "mypy>=1.8",
+  "ruff>=0.5",
+]
+
 dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
@@ -24,20 +35,27 @@ dev = [
 ]
 
 robotics = [
-  "roboticstoolbox-python"
+  "roboticstoolbox-python>=1.1.0",
+  "spatialmath-python>=1.1.13",
 ]
 
 vision = [
-  "opencv-python"
+  "opencv-contrib-python>=4.10.0",
 ]
 
 yolo = [
-  "ultralytics"
+  "ultralytics>=8.3.0",
 ]
 
-ros2 = [
-  # intentionally empty in pyproject base;
-  # ROS 2 dependencies should stay optional and isolated by environment
+full = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "mypy>=1.8",
+  "ruff>=0.5",
+  "roboticstoolbox-python>=1.1.0",
+  "spatialmath-python>=1.1.13",
+  "opencv-contrib-python>=4.10.0",
+  "ultralytics>=8.3.0",
 ]
 
 [tool.setuptools]
