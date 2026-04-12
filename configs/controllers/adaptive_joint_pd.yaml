@@ -1,9 +1,0 @@
-controller:
-  kind: adaptive_joint_pd
-  gains:
-    kp: 12.0
-    kd: 1.2
-    ki: 0.0
-  limits:
-    max_velocity: 1.0
-    max_acceleration: 2.0

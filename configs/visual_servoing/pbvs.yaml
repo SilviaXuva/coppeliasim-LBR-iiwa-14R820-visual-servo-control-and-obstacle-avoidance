@@ -1,6 +1,0 @@
-visual_servoing:
-  enabled: true
-  kind: pbvs
-  target_frame: aruco_target
-  camera_frame: camera
-  gain: 0.8

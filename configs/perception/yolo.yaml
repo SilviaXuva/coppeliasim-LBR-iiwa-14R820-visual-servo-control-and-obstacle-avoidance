@@ -1,6 +1,0 @@
-perception:
-  person_detector:
-    enabled: true
-    backend: yolo
-    model_name: yolo11n
-    confidence_threshold: 0.5

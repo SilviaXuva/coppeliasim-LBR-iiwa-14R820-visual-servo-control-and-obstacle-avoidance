@@ -1,14 +1,4 @@
 **/__pycache__/*
 .vscode/
-.env/
-.pytest_cache/
-.pytest_temp/
-
-*.egg-info
-
-experiments/runs/*
-!experiments/runs/.gitkeep
-experiments/reports/*
-!experiments/reports/.gitkeep
-experiments/figures/*
-!experiments/figures/.gitkeep
+.venv/
+manipulator_framework/results/
