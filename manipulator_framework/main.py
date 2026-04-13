@@ -14,7 +14,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--experiment",
-        choices=["pick_and_place"],
+        choices=["pick_and_place_kin_pi", "pick_and_place_dyn_pd"],
         required=True,
         help="Experiment name to run.",
     )

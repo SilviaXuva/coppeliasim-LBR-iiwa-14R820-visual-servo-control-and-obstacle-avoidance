@@ -10,11 +10,13 @@ from ...core.controllers.kinematic.joint_pi import JointPIController
 from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.ports.camera_port import CameraPort
+from ...core.ports.dynamics_port import DynamicsPort
 from ...core.ports.kinematics_port import KinematicsPort
 from ...core.ports.perception_port import PerceptionPort
 from ...core.ports.robot_port import RobotPort
 from ...core.ports.visualization_port import VisualizationPort
 from ...core.trajectory.quintic_trajectory import QuinticJointTrajectory
+from ...core.controllers.dynamic.joint_pd import JointPDController
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,9 +75,13 @@ class PickAndPlaceUseCase:
         kinematics: KinematicsPort,
         visualization: VisualizationPort | None = None,
         trajectory_generator: TrajectoryGeneratorLike | None = None,
-        controller: JointControllerLike | None = None,
+        controller: JointControllerLike | str | None = None,
+        dynamics: DynamicsPort | None = None,
         kp: GainValue = 1.0,
         ki: GainValue = 0.0,
+        kv: GainValue = 0.0,
+        joints_torques_min: Sequence[float] | None = None,
+        joints_torques_max: Sequence[float] | None = None,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
         target_height_offset_m: float = 0.0,
@@ -94,9 +100,21 @@ class PickAndPlaceUseCase:
             if trajectory_generator is not None
             else QuinticJointTrajectory()
         )
-        self._controller = controller
+        self._controller: JointControllerLike | None = None
+        self._controller_strategy: str | None = None
+
+        if isinstance(controller, str):
+            self._controller_strategy = controller
+        else:
+            self._controller = controller
+
+        self._dynamics = dynamics
         self._kp = self._normalize_gain(kp, "kp")
         self._ki = self._normalize_gain(ki, "ki")
+        self._kv = self._normalize_gain(kv, "kv")
+        self._joints_torques_min = joints_torques_min
+        self._joints_torques_max = joints_torques_max
+
         self._trajectory_duration_s = float(trajectory_duration_s)
         self._control_dt_s = float(control_dt_s)
         if self._trajectory_duration_s <= 0.0:
@@ -158,7 +176,7 @@ class PickAndPlaceUseCase:
             self._visualization.update_reference_path(reference_path)
 
         executed_steps = 0
-        for q_ref, q_dot_ref in zip(
+        for q_ref, dq_ref in zip(
             trajectory.joints_positions,
             trajectory.joints_velocities,
         ):
@@ -166,12 +184,16 @@ class PickAndPlaceUseCase:
                 break
 
             state = self._robot.get_state()
-            control = controller.update(
-                joints_positions=state.joints_positions,
-                joints_positions_ref=q_ref,
-                joints_velocities_ref=q_dot_ref,
-                dt=self._control_dt_s,
-            )
+            kwargs = {
+                "joints_positions": state.joints_positions,
+                "joints_positions_ref": q_ref,
+                "joints_velocities_ref": dq_ref,
+                "dt": self._control_dt_s,
+            }
+            if isinstance(controller, JointPDController):
+                kwargs["joints_velocities"] = state.joints_velocities
+
+            control = controller.update(**kwargs)
             self._robot.command_joints_velocities(control.joints_velocities)
             self._robot.step(reference_xyz=target_pose.xyz)
 
@@ -235,11 +257,31 @@ class PickAndPlaceUseCase:
     def _ensure_controller(self, joints_count: int) -> None:
         if self._controller is not None:
             return
-        self._controller = JointPIController(
-            kp=self._kp,
-            ki=self._ki,
-            joints_count=joints_count,
-        )
+
+        strategy = self._controller_strategy or "kinematic_pi"
+
+        if strategy == "kinematic_pi":
+            self._controller = JointPIController(
+                kp=self._kp,
+                ki=self._ki,
+                joints_count=joints_count,
+            )
+        elif strategy == "dynamic_pd":
+            if self._dynamics is None:
+                raise ValueError("`dynamics` must be provided when using dynamic PD controller.")
+            if self._joints_torques_min is None or self._joints_torques_max is None:
+                raise ValueError("`joints_torques_min` and `joints_torques_max` must be provided when using dynamic PD controller.")
+            self._controller = JointPDController(
+                dynamics=self._dynamics,
+                kp=self._kp,
+                kv=self._kv,
+                joints_count=joints_count,
+                joints_torques_min=self._joints_torques_min,
+                joints_torques_max=self._joints_torques_max,
+            )
+        else:
+            raise ValueError(f"Unknown controller strategy: {strategy}")
+
 
     def _build_target_pose(self, marker: MarkerState) -> Pose:
         if marker.pose_world is None:

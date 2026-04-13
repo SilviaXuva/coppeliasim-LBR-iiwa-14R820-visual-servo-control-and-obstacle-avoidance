@@ -10,8 +10,14 @@ from typing import Any
 
 
 _SCENE_PATH_ENV_VAR = "COPPELIA_SCENE_PATH"
+_EXPERIMENT_PICK_AND_PLACE_KIN_PI = "pick_and_place_kin_pi"
+_EXPERIMENT_PICK_AND_PLACE_DYN_PD = "pick_and_place_dyn_pd"
+_SUPPORTED_EXPERIMENTS = (
+    _EXPERIMENT_PICK_AND_PLACE_KIN_PI,
+    _EXPERIMENT_PICK_AND_PLACE_DYN_PD,
+)
 
-_DEFAULT_PICK_AND_PLACE_KP = (
+_DEFAULT_PICK_AND_PLACE_KIN_PI_KP = (
     1.64725,
     1.40056,
     1.40056,
@@ -20,7 +26,7 @@ _DEFAULT_PICK_AND_PLACE_KP = (
     1.40056,
     1.36873,
 )
-_DEFAULT_PICK_AND_PLACE_KI = (
+_DEFAULT_PICK_AND_PLACE_KIN_PI_KI = (
     1.23544,
     0.93371,
     0.93371,
@@ -28,6 +34,42 @@ _DEFAULT_PICK_AND_PLACE_KI = (
     0.91249,
     0.93371,
     0.91249,
+)
+_DEFAULT_PICK_AND_PLACE_DYN_PD_KP = (
+    80.00,
+    85.00,
+    25.00,
+    19.00,
+    10.00,
+    20.00,
+    5.00
+)
+_DEFAULT_PICK_AND_PLACE_DYN_PD_KV = (
+    1.000,
+    10.50,
+    1.000,
+    3.000,
+    1.000,
+    1.500,
+    0.25,
+)
+_DEFAULT_PICK_AND_PLACE_TAU_MIN = (
+    -176.00,
+    -176.00,
+    -100.00,
+    -100.00,
+    -100.00,
+    -38.00,
+    -38.00,
+)
+_DEFAULT_PICK_AND_PLACE_TAU_MAX = (
+    176.00,
+    176.00,
+    100.00,
+    100.00,
+    100.00,
+    38.00,
+    38.00,
 )
 
 GainConfig = float | tuple[float, ...]
@@ -94,6 +136,31 @@ def _parse_gain(value: Any, gain_name: str) -> GainConfig:
     )
 
 
+def _parse_vector(value: Any, values_name: str) -> tuple[float, ...]:
+    if isinstance(value, (str, bytes)):
+        raise ValueError(f"`{values_name}` must be a sequence of numeric values.")
+    if not isinstance(value, Sequence):
+        raise ValueError(f"`{values_name}` must be a sequence of numeric values.")
+    if len(value) == 0:
+        raise ValueError(f"`{values_name}` must not be empty.")
+    try:
+        return tuple(float(item) for item in value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"`{values_name}` must be a sequence of numeric values."
+        ) from None
+
+
+def _normalize_experiment_name(experiment: str) -> str:
+    normalized = {"pick_and_place": _EXPERIMENT_PICK_AND_PLACE_KIN_PI}.get(experiment, experiment)
+    if normalized not in _SUPPORTED_EXPERIMENTS:
+        supported = ", ".join(f"'{name}'" for name in _SUPPORTED_EXPERIMENTS)
+        raise ValueError(
+            f"Unsupported experiment '{experiment}'. Supported: [{supported}]."
+        )
+    return normalized
+
+
 @dataclass(slots=True)
 class RuntimeConfig:
     backend: str = "mock"
@@ -106,8 +173,11 @@ class RuntimeConfig:
 
 @dataclass(slots=True)
 class PickAndPlaceConfig:
-    kp: GainConfig = _DEFAULT_PICK_AND_PLACE_KP
-    ki: GainConfig = _DEFAULT_PICK_AND_PLACE_KI
+    kp: GainConfig = _DEFAULT_PICK_AND_PLACE_KIN_PI_KP
+    ki: GainConfig = _DEFAULT_PICK_AND_PLACE_KIN_PI_KI
+    kv: GainConfig = _DEFAULT_PICK_AND_PLACE_DYN_PD_KV
+    tau_min: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_TAU_MIN
+    tau_max: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_TAU_MAX
     trajectory_duration_s: float = 1.5
     control_dt_s: float = 0.05
     target_height_offset_m: float = 0.15
@@ -140,7 +210,7 @@ class CoppeliaConfig:
 
 @dataclass(slots=True)
 class ExperimentConfig:
-    experiment: str = "pick_and_place"
+    experiment: str = _EXPERIMENT_PICK_AND_PLACE_KIN_PI
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     pick_and_place: PickAndPlaceConfig = field(default_factory=PickAndPlaceConfig)
     persistence: PersistenceConfig = field(default_factory=PersistenceConfig)
@@ -157,11 +227,24 @@ def _apply_environment_overrides(config: ExperimentConfig) -> ExperimentConfig:
 
 
 def default_experiment_config(experiment: str) -> ExperimentConfig:
-    if experiment != "pick_and_place":
-        raise ValueError(
-            f"Unsupported experiment '{experiment}'. Supported: ['pick_and_place']."
+    normalized_experiment = _normalize_experiment_name(str(experiment))
+    
+    if normalized_experiment == _EXPERIMENT_PICK_AND_PLACE_DYN_PD:
+        pick_cfg = PickAndPlaceConfig(
+            kp=_DEFAULT_PICK_AND_PLACE_DYN_PD_KP,
+            ki=_DEFAULT_PICK_AND_PLACE_KIN_PI_KI,
+            kv=_DEFAULT_PICK_AND_PLACE_DYN_PD_KV,
         )
-    return _apply_environment_overrides(ExperimentConfig(experiment=experiment))
+    else:
+        pick_cfg = PickAndPlaceConfig(
+            kp=_DEFAULT_PICK_AND_PLACE_KIN_PI_KP,
+            ki=_DEFAULT_PICK_AND_PLACE_KIN_PI_KI,
+            kv=_DEFAULT_PICK_AND_PLACE_DYN_PD_KV,
+        )
+
+    return _apply_environment_overrides(
+        ExperimentConfig(experiment=normalized_experiment, pick_and_place=pick_cfg)
+    )
 
 
 def load_experiment_config(
@@ -212,7 +295,9 @@ def _experiment_config_from_dict(
     )
 
     return ExperimentConfig(
-        experiment=str(data.get("experiment", "pick_and_place")),
+        experiment=_normalize_experiment_name(
+            str(data.get("experiment", _EXPERIMENT_PICK_AND_PLACE_KIN_PI))
+        ),
         runtime=RuntimeConfig(
             backend=str(runtime_data.get("backend", "mock")),
             cycles=int(runtime_data.get("cycles", 1)),
@@ -223,12 +308,24 @@ def _experiment_config_from_dict(
         ),
         pick_and_place=PickAndPlaceConfig(
             kp=_parse_gain(
-                pick_data.get("kp", _DEFAULT_PICK_AND_PLACE_KP),
+                pick_data.get("kp", _DEFAULT_PICK_AND_PLACE_KIN_PI_KP),
                 "kp",
             ),
             ki=_parse_gain(
-                pick_data.get("ki", _DEFAULT_PICK_AND_PLACE_KI),
+                pick_data.get("ki", _DEFAULT_PICK_AND_PLACE_KIN_PI_KI),
                 "ki",
+            ),
+            kv=_parse_gain(
+                pick_data.get("kv", _DEFAULT_PICK_AND_PLACE_DYN_PD_KV),
+                "kv",
+            ),
+            tau_min=_parse_vector(
+                pick_data.get("tau_min", _DEFAULT_PICK_AND_PLACE_TAU_MIN),
+                "tau_min",
+            ),
+            tau_max=_parse_vector(
+                pick_data.get("tau_max", _DEFAULT_PICK_AND_PLACE_TAU_MAX),
+                "tau_max",
             ),
             trajectory_duration_s=float(pick_data.get("trajectory_duration_s", 2.0)),
             control_dt_s=float(pick_data.get("control_dt_s", 0.05)),

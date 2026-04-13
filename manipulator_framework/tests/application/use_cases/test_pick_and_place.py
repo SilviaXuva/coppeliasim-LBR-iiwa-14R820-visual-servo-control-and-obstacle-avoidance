@@ -61,7 +61,8 @@ class _FakeRobot:
         self.step_calls: list[tuple[float, float, float] | None] = []
 
     def get_state(self) -> RobotState:
-        return RobotState(joints_positions=self._q)
+        q_dot = self.velocity_commands[-1] if self.velocity_commands else tuple(0.0 for _ in self._q)
+        return RobotState(joints_positions=self._q, joints_velocities=q_dot)
 
     def get_joints_positions(self) -> tuple[float, ...]:
         return self._q
@@ -152,6 +153,20 @@ class _FakeKinematics:
     def plan_cartesian_trajectory(self, start_pose, goal_pose, time_samples_s):
         del start_pose, goal_pose, time_samples_s
         return ()
+
+
+class _FakeDynamics:
+    def inertia(self, joints_positions):
+        count = len(joints_positions)
+        return tuple(tuple(1.0 if r == c else 0.0 for c in range(count)) for r in range(count))
+
+    def coriolis(self, joints_positions, joints_velocities):
+        count = len(joints_positions)
+        return tuple(tuple(0.0 for _ in range(count)) for _ in range(count))
+
+    def gravity(self, joints_positions):
+        return tuple(0.0 for _ in joints_positions)
+
 
 
 class _FakeVisualization:
@@ -338,6 +353,32 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
         self.assertEqual(result.reason, "no_marker_detected_with_world_pose")
         self.assertEqual(perception.calls, 1)
         self.assertEqual(len(robot.step_calls), 1)
+
+    def test_run_once_with_dynamic_pd_strategy(self) -> None:
+        robot = _FakeRobot(joints_count=3)
+        use_case = PickAndPlaceUseCase(
+            robot=robot,
+            camera=_FakeCamera(),
+            perception=_FakePerception((self.marker,)),
+            kinematics=_FakeKinematics(),
+            trajectory_generator=_FakeTrajectoryGenerator(self.trajectory),
+            controller="dynamic_pd",
+            dynamics=_FakeDynamics(),
+            kp=10.0,
+            kv=2.0,
+            joints_torques_min=(-10.0, -10.0, -10.0),
+            joints_torques_max=(10.0, 10.0, 10.0),
+            trajectory_duration_s=1.0,
+            control_dt_s=0.1,
+        )
+
+        result = use_case.run_once()
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.reason, "trajectory_executed")
+        self.assertEqual(result.executed_steps, 3)
+        self.assertEqual(len(robot.velocity_commands), 4)
+
 
 
 if __name__ == "__main__":

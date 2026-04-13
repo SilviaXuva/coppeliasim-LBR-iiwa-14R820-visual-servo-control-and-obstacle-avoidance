@@ -166,6 +166,17 @@ class TestExperimentRunner(unittest.TestCase):
         self.assertEqual(execution.metrics["cycles_executed"], 1)
         self.assertEqual(fake_use_case.shutdown_calls, 1)
 
+    def test_from_config_supports_dynamic_pd_experiment(self) -> None:
+        config = ExperimentConfig(experiment="pick_and_place_dyn_pd")
+        config.runtime.backend = "mock"
+        config.runtime.cycles = 1
+
+        runner = ExperimentRunner.from_config(config=config, results_repository=None)
+        results = runner.run(cycles=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIn(results[0].reason, {"trajectory_executed", "max_control_steps_reached"})
+
 
 if __name__ == "__main__":
     unittest.main()

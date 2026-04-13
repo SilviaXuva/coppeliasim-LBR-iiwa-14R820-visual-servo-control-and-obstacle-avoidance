@@ -8,8 +8,18 @@ from manipulator_framework.config.experiment_config import load_experiment_confi
 
 
 class TestExperimentConfigEnvOverride(unittest.TestCase):
-    def test_default_joint_gains_match_legacy_values(self) -> None:
+    def test_supports_dynamic_pd_experiment_name(self) -> None:
+        config = load_experiment_config("pick_and_place_dyn_pd")
+        self.assertEqual(config.experiment, "pick_and_place_dyn_pd")
+        self.assertEqual(len(config.pick_and_place.tau_min), 7)
+        self.assertEqual(len(config.pick_and_place.tau_max), 7)
+
+    def test_legacy_experiment_alias_maps_to_kin_pi(self) -> None:
         config = load_experiment_config("pick_and_place")
+        self.assertEqual(config.experiment, "pick_and_place_kin_pi")
+
+    def test_default_joint_gains_match_legacy_values(self) -> None:
+        config = load_experiment_config("pick_and_place_kin_pi")
         self.assertEqual(
             config.pick_and_place.kp,
             (
@@ -47,7 +57,7 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         )
         with patch("pathlib.Path.read_text", return_value=fake_json_payload):
             config = load_experiment_config(
-                "pick_and_place",
+                "pick_and_place_kin_pi",
                 config_path=fake_config_path,
             )
 
@@ -55,7 +65,7 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         self.assertEqual(config.pick_and_place.ki, (0.1, 0.2, 0.3))
 
     def test_camera_frame_rotation_matches_legacy_yaw_180(self) -> None:
-        config = load_experiment_config("pick_and_place")
+        config = load_experiment_config("pick_and_place_kin_pi")
         self.assertEqual(
             config.coppelia.camera_frame_rotation,
             (
@@ -82,7 +92,7 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         )
         with patch("pathlib.Path.read_text", return_value=fake_json_payload):
             config = load_experiment_config(
-                "pick_and_place",
+                "pick_and_place_kin_pi",
                 config_path=fake_config_path,
             )
 
@@ -102,7 +112,7 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         previous = os.environ.get("COPPELIA_SCENE_PATH")
         os.environ["COPPELIA_SCENE_PATH"] = str(scene_path)
         try:
-            config = load_experiment_config("pick_and_place")
+            config = load_experiment_config("pick_and_place_kin_pi")
         finally:
             if previous is None:
                 os.environ.pop("COPPELIA_SCENE_PATH", None)
@@ -125,7 +135,7 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         try:
             with patch("pathlib.Path.read_text", return_value=fake_json_payload):
                 config = load_experiment_config(
-                    "pick_and_place",
+                    "pick_and_place_kin_pi",
                     config_path=fake_config_path,
                 )
         finally:

@@ -10,7 +10,7 @@ import numpy as np
 @dataclass(slots=True, frozen=True)
 class JointPIResult:
     joints_velocities: tuple[float, ...]
-    error: tuple[float, ...]
+    joints_positions_error: tuple[float, ...]
     next_integral_state: tuple[float, ...]
 
 
@@ -20,7 +20,7 @@ class JointPIController:
 
     Legacy behavior preserved:
     - integral state is the previous joint error
-    - command = Kp*e + Ki*(int_state + e*dt) + q_dot_ref
+    - command = Kp*e + Ki*(int_state + e*dt) + dq_ref
     """
 
     def __init__(
@@ -55,7 +55,7 @@ class JointPIController:
         self,
         joints_positions: Sequence[float],
         joints_positions_ref: Sequence[float],
-        joints_velocities_ref: Sequence[float] | None = None,
+        joints_velocities_ref: Sequence[float],
         dt: float = 0.0,
         integral_state: Sequence[float] | None = None,
     ) -> JointPIResult:
@@ -73,9 +73,9 @@ class JointPIController:
             dtype=float,
         )
         if joints_velocities_ref is None:
-            q_dot_ref = np.zeros(self._joints_count, dtype=float)
+            dq_ref = np.zeros(self._joints_count, dtype=float)
         else:
-            q_dot_ref = np.asarray(
+            dq_ref = np.asarray(
                 self._as_vector(
                     joints_velocities_ref,
                     self._joints_count,
@@ -92,20 +92,20 @@ class JointPIController:
                 dtype=float,
             )
 
-        error = q_ref - q
-        control = (
-            self._kp @ error
-            + self._ki @ (int_state + error * float(dt))
-            + q_dot_ref
+        q_err = q_ref - q
+        dq_ctrl = (
+            self._kp @ q_err
+            + self._ki @ (int_state + q_err * float(dt))
+            + dq_ref
         )
 
-        error_tuple = tuple(float(value) for value in error)
-        control_tuple = tuple(float(value) for value in control)
+        q_err_tuple = tuple(float(value) for value in q_err)
+        dq_ctrl_tuple = tuple(float(value) for value in dq_ctrl)
 
         return JointPIResult(
-            joints_velocities=control_tuple,
-            error=error_tuple,
-            next_integral_state=error_tuple,
+            joints_velocities=dq_ctrl_tuple,
+            joints_positions_error=q_err_tuple,
+            next_integral_state=q_err_tuple,
         )
 
     def update(

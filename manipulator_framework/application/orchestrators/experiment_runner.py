@@ -8,11 +8,13 @@ import random
 from typing import Any
 from uuid import uuid4
 
+from ...core.controllers.dynamic.joint_pd import JointPDController
 from ...core.controllers.kinematic.joint_pi import JointPIController
 from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.models.robot_state import RobotState
 from ...core.ports.camera_port import CameraPort
+from ...core.ports.dynamics_port import DynamicsPort
 from ...core.ports.kinematics_port import KinematicsPort
 from ...core.ports.perception_port import PerceptionPort
 from ...core.ports.robot_port import RobotPort
@@ -23,6 +25,8 @@ from ...infrastructure.results_repository import ResultsRepository
 from ..use_cases.pick_and_place import PickAndPlaceResult, PickAndPlaceUseCase
 
 GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
+_EXPERIMENT_PICK_AND_PLACE_KIN_PI = "pick_and_place_kin_pi"
+_EXPERIMENT_PICK_AND_PLACE_DYN_PD = "pick_and_place_dyn_pd"
 
 
 @dataclass(slots=True)
@@ -31,8 +35,8 @@ class PickAndPlaceWiring:
     camera: CameraPort
     perception: PerceptionPort
     kinematics: KinematicsPort
+    dynamics: DynamicsPort | None = None
     visualization: VisualizationPort | None = None
-
 
 @dataclass(slots=True, frozen=True)
 class ExperimentExecution:
@@ -41,7 +45,6 @@ class ExperimentExecution:
     metrics: dict[str, Any]
     artifacts: dict[str, str]
     cycle_results: tuple[PickAndPlaceResult, ...]
-
 
 class ExperimentRunner:
     """Loads config, wires dependencies, executes use-cases and persists artifacts."""
@@ -60,31 +63,37 @@ class ExperimentRunner:
     def from_wiring(
         cls,
         wiring: PickAndPlaceWiring,
-        kp: GainValue = 1.0,
-        ki: GainValue = 0.0,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
         target_height_offset_m: float = 0.0,
         config: ExperimentConfig | None = None,
         results_repository: ResultsRepository | None = None,
     ) -> "ExperimentRunner":
+        kwargs: dict[str, Any] = {}
+        if config is not None:
+            if config.experiment == _EXPERIMENT_PICK_AND_PLACE_KIN_PI:
+                kwargs["controller"] = "kinematic_pi"
+            elif config.experiment == _EXPERIMENT_PICK_AND_PLACE_DYN_PD:
+                kwargs["controller"] = "dynamic_pd"
+            kwargs["kp"] = config.pick_and_place.kp
+            kwargs["ki"] = config.pick_and_place.ki
+            kwargs["kv"] = config.pick_and_place.kv
+            kwargs["joints_torques_min"] = config.pick_and_place.tau_min
+            kwargs["joints_torques_max"] = config.pick_and_place.tau_max
+
         initial_state = wiring.robot.get_state()
-        controller = JointPIController(
-            kp=kp,
-            ki=ki,
-            joints_count=len(initial_state.joints_positions),
-        )
         use_case = PickAndPlaceUseCase(
             robot=wiring.robot,
             camera=wiring.camera,
             perception=wiring.perception,
             kinematics=wiring.kinematics,
+            dynamics=wiring.dynamics,
             visualization=wiring.visualization,
             trajectory_generator=QuinticJointTrajectory(),
-            controller=controller,
             trajectory_duration_s=trajectory_duration_s,
             control_dt_s=control_dt_s,
             target_height_offset_m=target_height_offset_m,
+            **kwargs,
         )
         return cls(
             use_case=use_case,
@@ -98,10 +107,11 @@ class ExperimentRunner:
         config: ExperimentConfig,
         results_repository: ResultsRepository | None = None,
     ) -> "ExperimentRunner":
-        if config.experiment != "pick_and_place":
-            raise ValueError(
-                f"Unsupported experiment '{config.experiment}'."
-            )
+        if config.experiment not in (
+            _EXPERIMENT_PICK_AND_PLACE_KIN_PI,
+            _EXPERIMENT_PICK_AND_PLACE_DYN_PD,
+        ):
+            raise ValueError(f"Unsupported experiment '{config.experiment}'.")
 
         wiring = cls._build_pick_and_place_wiring(config)
         repository = (
@@ -109,13 +119,38 @@ class ExperimentRunner:
             if results_repository is not None
             else ResultsRepository(config.persistence.output_dir)
         )
-        return cls.from_wiring(
-            wiring=wiring,
+
+        if config.experiment == _EXPERIMENT_PICK_AND_PLACE_DYN_PD:
+            if wiring.dynamics is None:
+                raise ValueError(
+                    "DynamicsPort wiring is required for 'pick_and_place_dyn_pd'."
+                )
+            controller = "dynamic_pd"
+        else:
+            controller = "kinematic_pi"
+
+        initial_state = wiring.robot.get_state()
+
+        use_case = PickAndPlaceUseCase(
+            robot=wiring.robot,
+            camera=wiring.camera,
+            perception=wiring.perception,
+            kinematics=wiring.kinematics,
+            dynamics=wiring.dynamics,
+            visualization=wiring.visualization,
+            trajectory_generator=QuinticJointTrajectory(),
+            controller=controller,
             kp=config.pick_and_place.kp,
             ki=config.pick_and_place.ki,
+            kv=config.pick_and_place.kv,
+            joints_torques_min=config.pick_and_place.tau_min,
+            joints_torques_max=config.pick_and_place.tau_max,
             trajectory_duration_s=config.pick_and_place.trajectory_duration_s,
             control_dt_s=config.pick_and_place.control_dt_s,
             target_height_offset_m=config.pick_and_place.target_height_offset_m,
+        )
+        return cls(
+            use_case=use_case,
             config=config,
             results_repository=repository,
         )
@@ -270,12 +305,14 @@ class ExperimentRunner:
         camera = _MockCameraAdapter()
         perception = _MockPerceptionAdapter()
         kinematics = _MockKinematicsAdapter()
+        dynamics = _MockDynamicsAdapter(joints_count=7)
         visualization: VisualizationPort | None = None
         return PickAndPlaceWiring(
             robot=robot,
             camera=camera,
             perception=perception,
             kinematics=kinematics,
+            dynamics=dynamics,
             visualization=visualization,
         )
 
@@ -283,6 +320,7 @@ class ExperimentRunner:
     def _build_coppelia_wiring(cls, config: ExperimentConfig) -> PickAndPlaceWiring:
         from ...adapters.perception.aruco_detector_adapter import ArucoDetectorAdapter
         from ...adapters.perception.coppelia_camera_adapter import CoppeliaCameraAdapter
+        from ...adapters.robotics.rtb_dynamics_adapter import RTBDynamicsAdapter
         from ...adapters.robotics.rtb_kinematics_adapter import RTBKinematicsAdapter
         from ...adapters.robotics.rtb_lbr_iiwa import LBRIiwaRTB
         from ...adapters.simulation.coppelia_adapter import CoppeliaAdapter
@@ -309,7 +347,9 @@ class ExperimentRunner:
             marker_length_m=config.pick_and_place.marker_length_m,
             dictionary_name=config.pick_and_place.aruco_dictionary,
         )
-        kinematics = RTBKinematicsAdapter(robot=LBRIiwaRTB())
+        rtb_robot_model = LBRIiwaRTB()
+        kinematics = RTBKinematicsAdapter(robot=rtb_robot_model)
+        dynamics = RTBDynamicsAdapter(robot=rtb_robot_model)
         visualization: VisualizationPort | None = None
         if config.runtime.enable_visualization:
             visualization = PyPlotAdapter()
@@ -322,6 +362,7 @@ class ExperimentRunner:
             camera=camera,
             perception=perception,
             kinematics=kinematics,
+            dynamics=dynamics,
             visualization=visualization,
         )
 
@@ -329,9 +370,10 @@ class ExperimentRunner:
 class _MockRobotAdapter(RobotPort):
     def __init__(self, joints_count: int = 7) -> None:
         self._q = tuple(0.0 for _ in range(joints_count))
+        self._q_dot = tuple(0.0 for _ in range(joints_count))
 
     def get_state(self) -> RobotState:
-        return RobotState(joints_positions=self._q)
+        return RobotState(joints_positions=self._q, joints_velocities=self._q_dot)
 
     def get_joints_positions(self) -> tuple[float, ...]:
         return self._q
@@ -341,6 +383,7 @@ class _MockRobotAdapter(RobotPort):
 
     def command_joints_velocities(self, joints_velocities: tuple[float, ...]) -> None:
         q_dot = tuple(float(value) for value in joints_velocities)
+        self._q_dot = q_dot
         self._q = tuple(
             q_i + 0.05 * q_dot_i for q_i, q_dot_i in zip(self._q, q_dot)
         )
@@ -379,6 +422,33 @@ class _MockPerceptionAdapter(PerceptionPort):
     def detect_people(self, frame: object):
         del frame
         return ()
+
+
+class _MockDynamicsAdapter(DynamicsPort):
+    def __init__(self, joints_count: int) -> None:
+        self._joints_count = joints_count
+
+    def inertia(self, joints_positions: Sequence[float]) -> tuple[tuple[float, ...], ...]:
+        del joints_positions
+        return tuple(
+            tuple(1.0 if row == column else 0.0 for column in range(self._joints_count))
+            for row in range(self._joints_count)
+        )
+
+    def coriolis(
+        self,
+        joints_positions: Sequence[float],
+        joints_velocities: Sequence[float],
+    ) -> tuple[tuple[float, ...], ...]:
+        del joints_positions, joints_velocities
+        return tuple(
+            tuple(0.0 for _ in range(self._joints_count))
+            for _ in range(self._joints_count)
+        )
+
+    def gravity(self, joints_positions: Sequence[float]) -> tuple[float, ...]:
+        del joints_positions
+        return tuple(0.0 for _ in range(self._joints_count))
 
 
 class _MockKinematicsAdapter(KinematicsPort):

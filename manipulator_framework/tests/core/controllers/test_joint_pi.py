@@ -21,8 +21,8 @@ class TestJointPIController(unittest.TestCase):
         expected_u0 = 2.0 * 0.5 + 0.5 * (0.3 + 0.5 * 0.2) + 0.1
         expected_u1 = 3.0 * (-1.0) + 0.25 * (-0.4 + (-1.0) * 0.2) - 0.2
 
-        self.assertAlmostEqual(result.error[0], 0.5, places=8)
-        self.assertAlmostEqual(result.error[1], -1.0, places=8)
+        self.assertAlmostEqual(result.joints_positions_error[0], 0.5, places=8)
+        self.assertAlmostEqual(result.joints_positions_error[1], -1.0, places=8)
         self.assertAlmostEqual(result.joints_velocities[0], expected_u0, places=8)
         self.assertAlmostEqual(result.joints_velocities[1], expected_u1, places=8)
         self.assertEqual(result.next_integral_state, (0.5, -1.0))
@@ -36,7 +36,7 @@ class TestJointPIController(unittest.TestCase):
             dt=0.1,
         )
 
-        self.assertEqual(result.error, (1.0, 2.0, 3.0))
+        self.assertEqual(result.joints_positions_error, (1.0, 2.0, 3.0))
         self.assertEqual(controller.integral_state, (1.0, 2.0, 3.0))
 
     def test_matrix_gain_uses_diagonal(self) -> None:
@@ -48,6 +48,7 @@ class TestJointPIController(unittest.TestCase):
         result = controller.compute(
             joints_positions=[0.0, 0.0],
             joints_positions_ref=[1.0, 1.0],
+            joints_velocities_ref=[0.0, 0.0],
             dt=0.0,
         )
         self.assertEqual(result.joints_velocities, (10.0, 20.0))
@@ -61,6 +62,7 @@ class TestJointPIController(unittest.TestCase):
             controller.compute(
                 joints_positions=[0.0],
                 joints_positions_ref=[0.0, 0.0],
+                joints_velocities_ref=[0.0, 0.0]
             )
 
     def test_accepts_numpy_scalar_vector_and_matrix_gains(self) -> None:
