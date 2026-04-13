@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from numbers import Real
 import random
 from typing import Any
 from uuid import uuid4
@@ -19,6 +21,8 @@ from ...core.trajectory.quintic_trajectory import QuinticJointTrajectory
 from ...config.experiment_config import ExperimentConfig
 from ...infrastructure.results_repository import ResultsRepository
 from ..use_cases.pick_and_place import PickAndPlaceResult, PickAndPlaceUseCase
+
+GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
 
 
 @dataclass(slots=True)
@@ -56,8 +60,8 @@ class ExperimentRunner:
     def from_wiring(
         cls,
         wiring: PickAndPlaceWiring,
-        kp: float = 1.0,
-        ki: float = 0.0,
+        kp: GainValue = 1.0,
+        ki: GainValue = 0.0,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
         marker_search_max_steps: int = 1,
@@ -113,7 +117,6 @@ class ExperimentRunner:
             ki=config.pick_and_place.ki,
             trajectory_duration_s=config.pick_and_place.trajectory_duration_s,
             control_dt_s=config.pick_and_place.control_dt_s,
-            marker_search_max_steps=config.pick_and_place.marker_search_max_steps,
             target_height_offset_m=config.pick_and_place.target_height_offset_m,
             config=config,
             results_repository=repository,

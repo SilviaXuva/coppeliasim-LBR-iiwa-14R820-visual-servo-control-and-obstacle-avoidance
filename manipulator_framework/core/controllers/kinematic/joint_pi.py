@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Real
 
+import numpy as np
+
 
 @dataclass(slots=True, frozen=True)
 class JointPIResult:
@@ -23,8 +25,8 @@ class JointPIController:
 
     def __init__(
         self,
-        kp: float | Sequence[float],
-        ki: float | Sequence[float],
+        kp: Real | Sequence[float] | Sequence[Sequence[float]] | np.ndarray,
+        ki: Real | Sequence[float] | Sequence[Sequence[float]] | np.ndarray,
         joints_count: int,
         initial_integral_state: Sequence[float] | None = None,
     ) -> None:
@@ -60,38 +62,50 @@ class JointPIController:
         if dt < 0.0:
             raise ValueError("`dt` must be non-negative.")
 
-        q = self._as_vector(joints_positions, self._joints_count, "joints_positions")
-        q_ref = self._as_vector(
-            joints_positions_ref, self._joints_count, "joints_positions_ref"
+        q = np.asarray(
+            self._as_vector(joints_positions, self._joints_count, "joints_positions"),
+            dtype=float,
+        )
+        q_ref = np.asarray(
+            self._as_vector(
+                joints_positions_ref, self._joints_count, "joints_positions_ref"
+            ),
+            dtype=float,
         )
         if joints_velocities_ref is None:
-            q_dot_ref = tuple(0.0 for _ in range(self._joints_count))
+            q_dot_ref = np.zeros(self._joints_count, dtype=float)
         else:
-            q_dot_ref = self._as_vector(
-                joints_velocities_ref,
-                self._joints_count,
-                "joints_velocities_ref",
+            q_dot_ref = np.asarray(
+                self._as_vector(
+                    joints_velocities_ref,
+                    self._joints_count,
+                    "joints_velocities_ref",
+                ),
+                dtype=float,
             )
 
         if integral_state is None:
-            int_state = self._integral_state
+            int_state = np.asarray(self._integral_state, dtype=float)
         else:
-            int_state = self._as_vector(
-                integral_state, self._joints_count, "integral_state"
+            int_state = np.asarray(
+                self._as_vector(integral_state, self._joints_count, "integral_state"),
+                dtype=float,
             )
 
-        error = tuple(q_ref_i - q_i for q_ref_i, q_i in zip(q_ref, q))
-        control = tuple(
-            self._kp[i] * error[i]
-            + self._ki[i] * (int_state[i] + error[i] * dt)
-            + q_dot_ref[i]
-            for i in range(self._joints_count)
+        error = q_ref - q
+        control = (
+            self._kp @ error
+            + self._ki @ (int_state + error * float(dt))
+            + q_dot_ref
         )
 
+        error_tuple = tuple(float(value) for value in error)
+        control_tuple = tuple(float(value) for value in control)
+
         return JointPIResult(
-            joints_velocities=control,
-            error=error,
-            next_integral_state=error,
+            joints_velocities=control_tuple,
+            error=error_tuple,
+            next_integral_state=error_tuple,
         )
 
     def update(
@@ -113,39 +127,39 @@ class JointPIController:
 
     @staticmethod
     def _normalize_gain(
-        gain: float | Sequence[float],
+        gain: Real | Sequence[float] | Sequence[Sequence[float]] | np.ndarray,
         joints_count: int,
         gain_name: str,
-    ) -> tuple[float, ...]:
+    ) -> np.ndarray:
         if isinstance(gain, Real):
             scalar_gain = float(gain)
-            return tuple(scalar_gain for _ in range(joints_count))
+            return np.eye(joints_count, dtype=float) * scalar_gain
 
-        gain_values = tuple(gain)
-        if len(gain_values) == joints_count:
-            try:
-                return tuple(float(value) for value in gain_values)
-            except (TypeError, ValueError):
-                pass
+        if isinstance(gain, (str, bytes)):
+            raise ValueError(f"`{gain_name}` must contain numeric values.") from None
 
-        if len(gain_values) == joints_count:
-            rows = []
-            for row in gain_values:
-                if isinstance(row, (str, bytes)):
-                    raise ValueError(
-                        f"`{gain_name}` matrix must contain numeric values."
-                    ) from None
-                try:
-                    rows.append(tuple(float(value) for value in row))  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"`{gain_name}` matrix must contain numeric values."
-                    ) from None
-            if any(len(row) != joints_count for row in rows):
+        try:
+            gain_array = np.asarray(gain, dtype=float)
+        except (TypeError, ValueError):
+            raise ValueError(f"`{gain_name}` must contain numeric values.") from None
+
+        if gain_array.ndim == 0:
+            scalar_gain = float(gain_array.item())
+            return np.eye(joints_count, dtype=float) * scalar_gain
+
+        if gain_array.ndim == 1:
+            if gain_array.shape[0] != joints_count:
+                raise ValueError(
+                    f"`{gain_name}` vector must have {joints_count} elements."
+                )
+            return np.diag(gain_array)
+
+        if gain_array.ndim == 2:
+            if gain_array.shape != (joints_count, joints_count):
                 raise ValueError(
                     f"`{gain_name}` matrix must be {joints_count}x{joints_count}."
                 )
-            return tuple(row[i] for i, row in enumerate(rows))
+            return np.diag(np.diag(gain_array))
 
         raise ValueError(f"`{gain_name}` must be scalar, vector or square matrix.")
 

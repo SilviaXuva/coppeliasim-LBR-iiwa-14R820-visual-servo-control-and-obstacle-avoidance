@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import math
+from numbers import Real
 from typing import Callable, Protocol
 
 from ...core.controllers.kinematic.joint_pi import JointPIController
@@ -54,6 +56,9 @@ class JointControllerLike(Protocol):
     ) -> ControlResultLike: ...
 
 
+GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
+
+
 class PickAndPlaceUseCase:
     """
     First vertical flow orchestration:
@@ -69,8 +74,8 @@ class PickAndPlaceUseCase:
         visualization: VisualizationPort | None = None,
         trajectory_generator: TrajectoryGeneratorLike | None = None,
         controller: JointControllerLike | None = None,
-        kp: float = 1.0,
-        ki: float = 0.0,
+        kp: GainValue = 1.0,
+        ki: GainValue = 0.0,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
         marker_search_max_steps: int = 1,
@@ -91,8 +96,8 @@ class PickAndPlaceUseCase:
             else QuinticJointTrajectory()
         )
         self._controller = controller
-        self._kp = float(kp)
-        self._ki = float(ki)
+        self._kp = self._normalize_gain(kp, "kp")
+        self._ki = self._normalize_gain(ki, "ki")
         self._trajectory_duration_s = float(trajectory_duration_s)
         self._control_dt_s = float(control_dt_s)
         self._marker_search_max_steps = int(marker_search_max_steps)
@@ -299,3 +304,47 @@ class PickAndPlaceUseCase:
             if marker.pose_world is not None:
                 return marker
         return None
+
+    @staticmethod
+    def _normalize_gain(
+        gain: GainValue,
+        gain_name: str,
+    ) -> float | tuple[float, ...] | tuple[tuple[float, ...], ...]:
+        if isinstance(gain, Real):
+            return float(gain)
+        if isinstance(gain, (str, bytes)):
+            raise ValueError(
+                f"`{gain_name}` must contain numeric values."
+            )
+
+        try:
+            gain_values = tuple(gain)
+        except TypeError:
+            raise ValueError(
+                f"`{gain_name}` must be scalar, vector or square matrix."
+            ) from None
+
+        if len(gain_values) == 0:
+            raise ValueError(f"`{gain_name}` must not be empty.")
+
+        if isinstance(gain_values[0], Real):
+            try:
+                return tuple(float(value) for value in gain_values)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"`{gain_name}` must contain numeric values."
+                ) from None
+
+        matrix_rows: list[tuple[float, ...]] = []
+        for row in gain_values:
+            if isinstance(row, (str, bytes)):
+                raise ValueError(
+                    f"`{gain_name}` must contain numeric values."
+                ) from None
+            try:
+                matrix_rows.append(tuple(float(value) for value in row))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"`{gain_name}` must contain numeric values."
+                ) from None
+        return tuple(matrix_rows)

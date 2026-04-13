@@ -1,13 +1,47 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 import json
+from numbers import Real
 import os
 from pathlib import Path
 from typing import Any
 
 
 _SCENE_PATH_ENV_VAR = "COPPELIA_SCENE_PATH"
+
+_DEFAULT_PICK_AND_PLACE_KP = (
+    1.64725,
+    1.40056,
+    1.40056,
+    1.33690,
+    1.36873,
+    1.40056,
+    1.36873,
+)
+_DEFAULT_PICK_AND_PLACE_KI = (
+    1.23544,
+    0.93371,
+    0.93371,
+    0.89127,
+    0.91249,
+    0.93371,
+    0.91249,
+)
+
+GainConfig = float | tuple[float, ...]
+
+
+def _default_camera_frame_rotation() -> tuple[tuple[float, ...], ...]:
+    # Legacy-compatible frame correction used for ArUco pose estimation in Coppelia.
+    # Equivalent to a +180deg yaw rotation in the camera frame.
+    return (
+        (-1.0, 0.0, 0.0, 0.0),
+        (0.0, -1.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0, 0.0),
+        (0.0, 0.0, 0.0, 1.0),
+    )
 
 
 def _default_scene_path() -> str | None:
@@ -39,10 +73,31 @@ def _resolve_optional_path(value: Any, base_dir: Path | None = None) -> str | No
     return str(path.resolve())
 
 
+def _parse_gain(value: Any, gain_name: str) -> GainConfig:
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, (str, bytes)):
+        raise ValueError(
+            f"`{gain_name}` must be a numeric scalar or a sequence of numeric values."
+        )
+    if isinstance(value, Sequence):
+        if len(value) == 0:
+            raise ValueError(f"`{gain_name}` sequence must not be empty.")
+        try:
+            return tuple(float(item) for item in value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"`{gain_name}` must be a numeric scalar or a sequence of numeric values."
+            ) from None
+    raise ValueError(
+        f"`{gain_name}` must be a numeric scalar or a sequence of numeric values."
+    )
+
+
 @dataclass(slots=True)
 class RuntimeConfig:
     backend: str = "mock"
-    cycles: int = 1
+    cycles: int = 10
     max_control_steps_per_cycle: int | None = None
     stop_on_success: bool = False
     random_seed: int = 42
@@ -51,11 +106,10 @@ class RuntimeConfig:
 
 @dataclass(slots=True)
 class PickAndPlaceConfig:
-    kp: float = 1.0
-    ki: float = 0.0
+    kp: GainConfig = _DEFAULT_PICK_AND_PLACE_KP
+    ki: GainConfig = _DEFAULT_PICK_AND_PLACE_KI
     trajectory_duration_s: float = 2.0
     control_dt_s: float = 0.05
-    marker_search_max_steps: int = 20
     target_height_offset_m: float = 0.0
     marker_length_m: float = 0.05
     aruco_dictionary: str = "DICT_6X6_250"
@@ -79,7 +133,9 @@ class CoppeliaConfig:
     tip_path: str = "./tip"
     camera_sensor_path: str = "./camera1"
     camera_distortion_coefficients: tuple[float, ...] = ()
-    camera_frame_rotation: tuple[tuple[float, ...], ...] | None = None
+    camera_frame_rotation: tuple[tuple[float, ...], ...] | None = field(
+        default_factory=_default_camera_frame_rotation
+    )
 
 
 @dataclass(slots=True)
@@ -154,13 +210,6 @@ def _experiment_config_from_dict(
         float(value)
         for value in coppelia_data.get("camera_distortion_coefficients", ())
     )
-    frame_rotation_value = coppelia_data.get("camera_frame_rotation")
-    frame_rotation: tuple[tuple[float, ...], ...] | None = None
-    if frame_rotation_value is not None:
-        frame_rotation = tuple(
-            tuple(float(value) for value in row)
-            for row in frame_rotation_value
-        )
 
     return ExperimentConfig(
         experiment=str(data.get("experiment", "pick_and_place")),
@@ -173,11 +222,16 @@ def _experiment_config_from_dict(
             enable_visualization=bool(runtime_data.get("enable_visualization", False)),
         ),
         pick_and_place=PickAndPlaceConfig(
-            kp=float(pick_data.get("kp", 1.0)),
-            ki=float(pick_data.get("ki", 0.0)),
+            kp=_parse_gain(
+                pick_data.get("kp", _DEFAULT_PICK_AND_PLACE_KP),
+                "kp",
+            ),
+            ki=_parse_gain(
+                pick_data.get("ki", _DEFAULT_PICK_AND_PLACE_KI),
+                "ki",
+            ),
             trajectory_duration_s=float(pick_data.get("trajectory_duration_s", 2.0)),
             control_dt_s=float(pick_data.get("control_dt_s", 0.05)),
-            marker_search_max_steps=int(pick_data.get("marker_search_max_steps", 20)),
             target_height_offset_m=float(pick_data.get("target_height_offset_m", 0.0)),
             marker_length_m=float(pick_data.get("marker_length_m", 0.05)),
             aruco_dictionary=str(pick_data.get("aruco_dictionary", "DICT_6X6_250")),
@@ -204,6 +258,7 @@ def _experiment_config_from_dict(
                 coppelia_data.get("camera_sensor_path", "./camera1")
             ),
             camera_distortion_coefficients=camera_distortion,
-            camera_frame_rotation=frame_rotation,
+            # Fixed for pick-and-place to preserve legacy camera frame convention.
+            camera_frame_rotation=_default_camera_frame_rotation(),
         ),
     )
