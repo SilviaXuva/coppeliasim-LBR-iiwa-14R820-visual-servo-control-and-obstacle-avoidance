@@ -64,7 +64,6 @@ class ExperimentRunner:
         ki: GainValue = 0.0,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
-        marker_search_max_steps: int = 1,
         target_height_offset_m: float = 0.0,
         config: ExperimentConfig | None = None,
         results_repository: ResultsRepository | None = None,
@@ -85,7 +84,6 @@ class ExperimentRunner:
             controller=controller,
             trajectory_duration_s=trajectory_duration_s,
             control_dt_s=control_dt_s,
-            marker_search_max_steps=marker_search_max_steps,
             target_height_offset_m=target_height_offset_m,
         )
         return cls(

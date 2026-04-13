@@ -313,7 +313,7 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
         self.assertAlmostEqual(target_pose.pitch, 0.0, places=8)
         self.assertAlmostEqual(target_pose.yaw, math.radians(90.0), places=8)
 
-    def test_run_once_retries_marker_detection_with_step_until_found(self) -> None:
+    def test_run_once_does_single_marker_detection_attempt(self) -> None:
         robot = _FakeRobot()
         perception = _FakePerceptionSequence(((), (self.marker,)))
         use_case = PickAndPlaceUseCase(
@@ -330,14 +330,14 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
             controller=_FakeController(),
             trajectory_duration_s=1.0,
             control_dt_s=0.1,
-            marker_search_max_steps=3,
         )
 
         result = use_case.run_once()
 
-        self.assertTrue(result.success)
-        self.assertGreaterEqual(perception.calls, 2)
-        self.assertGreaterEqual(len(robot.step_calls), 2)  # one for marker retry + one final
+        self.assertFalse(result.success)
+        self.assertEqual(result.reason, "no_marker_detected_with_world_pose")
+        self.assertEqual(perception.calls, 1)
+        self.assertEqual(len(robot.step_calls), 1)
 
 
 if __name__ == "__main__":

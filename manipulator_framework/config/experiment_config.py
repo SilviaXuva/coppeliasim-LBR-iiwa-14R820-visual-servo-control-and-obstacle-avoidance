@@ -97,7 +97,7 @@ def _parse_gain(value: Any, gain_name: str) -> GainConfig:
 @dataclass(slots=True)
 class RuntimeConfig:
     backend: str = "mock"
-    cycles: int = 10
+    cycles: int = 1
     max_control_steps_per_cycle: int | None = None
     stop_on_success: bool = False
     random_seed: int = 42
@@ -108,9 +108,9 @@ class RuntimeConfig:
 class PickAndPlaceConfig:
     kp: GainConfig = _DEFAULT_PICK_AND_PLACE_KP
     ki: GainConfig = _DEFAULT_PICK_AND_PLACE_KI
-    trajectory_duration_s: float = 2.0
+    trajectory_duration_s: float = 1.5
     control_dt_s: float = 0.05
-    target_height_offset_m: float = 0.0
+    target_height_offset_m: float = 0.15
     marker_length_m: float = 0.05
     aruco_dictionary: str = "DICT_6X6_250"
 

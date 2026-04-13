@@ -78,7 +78,6 @@ class PickAndPlaceUseCase:
         ki: GainValue = 0.0,
         trajectory_duration_s: float = 2.0,
         control_dt_s: float = 0.05,
-        marker_search_max_steps: int = 1,
         target_height_offset_m: float = 0.0,
         use_legacy_gripper_rotation: bool = True,
         marker_selector: Callable[[tuple[MarkerState, ...]], MarkerState | None]
@@ -100,13 +99,10 @@ class PickAndPlaceUseCase:
         self._ki = self._normalize_gain(ki, "ki")
         self._trajectory_duration_s = float(trajectory_duration_s)
         self._control_dt_s = float(control_dt_s)
-        self._marker_search_max_steps = int(marker_search_max_steps)
         if self._trajectory_duration_s <= 0.0:
             raise ValueError("`trajectory_duration_s` must be greater than zero.")
         if self._control_dt_s <= 0.0:
             raise ValueError("`control_dt_s` must be greater than zero.")
-        if self._marker_search_max_steps <= 0:
-            raise ValueError("`marker_search_max_steps` must be greater than zero.")
         self._target_height_offset_m = float(target_height_offset_m)
         self._use_legacy_gripper_rotation = bool(use_legacy_gripper_rotation)
         self._marker_selector = (
@@ -221,24 +217,20 @@ class PickAndPlaceUseCase:
                 pass
 
     def _detect_target_marker(self) -> tuple[MarkerState | None, tuple[MarkerState, ...]]:
-        last_markers: tuple[MarkerState, ...] = ()
-        for _ in range(self._marker_search_max_steps):
-            frame = self._camera.capture_frame()
-            markers = tuple(self._perception.detect_markers(frame))
-            people = tuple(self._perception.detect_people(frame))
+        frame = self._camera.capture_frame()
+        markers = tuple(self._perception.detect_markers(frame))
+        people = tuple(self._perception.detect_people(frame))
 
-            if self._visualization is not None:
-                self._visualization.update_markers(markers)
-                self._visualization.update_people(people)
+        if self._visualization is not None:
+            self._visualization.update_markers(markers)
+            self._visualization.update_people(people)
 
-            marker = self._marker_selector(markers)
-            if marker is not None:
-                return marker, markers
+        marker = self._marker_selector(markers)
+        if marker is not None:
+            return marker, markers
 
-            last_markers = markers
-            self._robot.step()
-
-        return None, last_markers
+        self._robot.step()
+        return None, markers
 
     def _ensure_controller(self, joints_count: int) -> None:
         if self._controller is not None:
