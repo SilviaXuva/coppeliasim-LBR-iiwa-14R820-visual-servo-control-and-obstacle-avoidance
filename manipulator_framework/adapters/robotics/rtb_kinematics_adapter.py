@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 import numpy as np
 from roboticstoolbox import DHRobot, ERobot
@@ -9,6 +10,14 @@ from spatialmath import SE3
 
 from ...core.models.pose import Pose
 from ...core.ports.kinematics_port import JacobianMatrix, KinematicsPort
+
+
+class _IKSolution(NamedTuple):
+    q: np.ndarray
+    success: bool
+    iterations: int
+    searches: int
+    residual: float
 
 
 class RTBKinematicsAdapter(KinematicsPort):
@@ -30,10 +39,50 @@ class RTBKinematicsAdapter(KinematicsPort):
         q0 = None
         if seed_joints_positions is not None:
             q0 = np.asarray(seed_joints_positions, dtype=float)
-        solution = self._robot.ikine_LMS(target_transform, q0=q0)
-        if hasattr(solution, "success") and not solution.success:
+        solution_raw = self._robot.ets().ik_LM(
+            target_transform,
+            q0=q0,
+            ilimit=30,
+            slimit=200,
+            tol=1e-3,
+            mask=np.ones(6),
+            k=1e-4,
+            joint_limits=False,
+            method='sugihara'
+        )
+        solution = self._normalize_ik_solution(solution_raw)
+        if not solution.success:
             raise RuntimeError("Inverse kinematics did not converge.")
         return tuple(float(value) for value in solution.q)
+
+    @staticmethod
+    def _normalize_ik_solution(solution: object) -> _IKSolution:
+        if all(
+            hasattr(solution, field)
+            for field in ("q", "success", "iterations", "searches", "residual")
+        ):
+            return _IKSolution(
+                q=np.asarray(getattr(solution, "q"), dtype=float),
+                success=bool(getattr(solution, "success")),
+                iterations=int(getattr(solution, "iterations")),
+                searches=int(getattr(solution, "searches")),
+                residual=float(getattr(solution, "residual")),
+            )
+
+        if isinstance(solution, tuple) and len(solution) >= 5:
+            q, success, iterations, searches, residual = solution[:5]
+            return _IKSolution(
+                q=np.asarray(q, dtype=float),
+                success=bool(success),
+                iterations=int(iterations),
+                searches=int(searches),
+                residual=float(residual),
+            )
+
+        raise TypeError(
+            "Unexpected ik_LM result format. Expected object or tuple with "
+            "(q, success, iterations, searches, residual)."
+        )
 
     def jacobian(self, joints_positions: Sequence[float]) -> JacobianMatrix:
         jacobian = self._robot.jacob0_analytical(
