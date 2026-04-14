@@ -11,7 +11,9 @@ from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.ports.camera_port import CameraPort
 from ...core.ports.dynamics_port import DynamicsPort
+from ...core.ports.gripper_port import GripperPort
 from ...core.ports.kinematics_port import KinematicsPort
+from ...core.ports.object_port import ObjectPort
 from ...core.ports.perception_port import PerceptionPort
 from ...core.ports.robot_port import RobotPort
 from ...core.ports.visualization_port import VisualizationPort
@@ -27,6 +29,7 @@ class PickAndPlaceResult:
     executed_steps: int
     target_marker_id: int | None = None
     target_pose: Pose | None = None
+    step_metrics: tuple[dict[str, float | int | str | None], ...] = ()
 
 
 class TrajectoryLike(Protocol):
@@ -86,6 +89,8 @@ class PickAndPlaceUseCase:
         control_dt_s: float = 0.05,
         target_height_offset_m: float = 0.0,
         use_legacy_gripper_rotation: bool = True,
+        gripper: GripperPort | None = None,
+        tracked_object: ObjectPort | None = None,
         marker_selector: Callable[[tuple[MarkerState, ...]], MarkerState | None]
         | None = None,
     ) -> None:
@@ -123,6 +128,8 @@ class PickAndPlaceUseCase:
             raise ValueError("`control_dt_s` must be greater than zero.")
         self._target_height_offset_m = float(target_height_offset_m)
         self._use_legacy_gripper_rotation = bool(use_legacy_gripper_rotation)
+        self._gripper = gripper
+        self._tracked_object = tracked_object
         self._marker_selector = (
             marker_selector if marker_selector is not None else self._default_marker_selector
         )
@@ -135,34 +142,146 @@ class PickAndPlaceUseCase:
                 reason="no_marker_detected_with_world_pose",
                 markers_detected=len(markers),
                 executed_steps=0,
+                step_metrics=(),
             )
 
         target_pose = self._build_target_pose(marker)
 
-        initial_state = self._robot.get_state()
-        self._ensure_controller(joints_count=len(initial_state.joints_positions))
+        current_state = self._robot.get_state()
+        self._ensure_controller(joints_count=len(current_state.joints_positions))
         controller = self._controller
         if controller is None:
             raise RuntimeError("Joint PI controller was not initialized.")
 
+        if self._gripper is not None:
+            self._gripper.open()
+
+        first_success, first_reason, first_steps, first_metrics = self._execute_motion(
+            controller=controller,
+            target_pose=target_pose,
+            target_marker_id=marker.marker_id,
+            max_control_steps=max_control_steps,
+            step_index_offset=0,
+        )
+        if not first_success:
+            return PickAndPlaceResult(
+                success=False,
+                reason=first_reason,
+                markers_detected=len(markers),
+                executed_steps=first_steps,
+                target_marker_id=marker.marker_id,
+                target_pose=target_pose,
+                step_metrics=tuple(first_metrics),
+            )
+
+        # Preserve legacy/simple behavior when no gripper/object integration is configured.
+        if self._gripper is None and self._tracked_object is None:
+            return PickAndPlaceResult(
+                success=True,
+                reason="trajectory_executed",
+                markers_detected=len(markers),
+                executed_steps=first_steps,
+                target_marker_id=marker.marker_id,
+                target_pose=target_pose,
+                step_metrics=tuple(first_metrics),
+            )
+
+        if self._gripper is None:
+            return PickAndPlaceResult(
+                success=False,
+                reason="gripper_not_configured",
+                markers_detected=len(markers),
+                executed_steps=first_steps,
+                target_marker_id=marker.marker_id,
+                target_pose=target_pose,
+                step_metrics=tuple(first_metrics),
+            )
+
+        if not self._gripper.grasp():
+            self._safe_release_and_detach()
+            return PickAndPlaceResult(
+                success=False,
+                reason="grasp_failed",
+                markers_detected=len(markers),
+                executed_steps=first_steps,
+                target_marker_id=marker.marker_id,
+                target_pose=target_pose,
+                step_metrics=tuple(first_metrics),
+            )
+
+        if self._tracked_object is not None:
+            try:
+                self._tracked_object.attach_to_gripper()
+            except Exception:
+                self._safe_release_and_detach()
+                return PickAndPlaceResult(
+                    success=False,
+                    reason="attach_to_gripper_failed",
+                    markers_detected=len(markers),
+                    executed_steps=first_steps,
+                    target_marker_id=marker.marker_id,
+                    target_pose=target_pose,
+                    step_metrics=tuple(first_metrics),
+                )
+
+        remaining_steps = None
+        if max_control_steps is not None:
+            remaining_steps = max(max_control_steps - first_steps, 0)
+        release_pose = self._build_release_pose(target_pose)
+        second_success, second_reason, second_steps, second_metrics = self._execute_motion(
+            controller=controller,
+            target_pose=release_pose,
+            target_marker_id=marker.marker_id,
+            max_control_steps=remaining_steps,
+            step_index_offset=first_steps,
+        )
+        total_steps = first_steps + second_steps
+        all_metrics = tuple(first_metrics + second_metrics)
+
+        if not second_success:
+            self._safe_release_and_detach()
+            return PickAndPlaceResult(
+                success=False,
+                reason=second_reason,
+                markers_detected=len(markers),
+                executed_steps=total_steps,
+                target_marker_id=marker.marker_id,
+                target_pose=target_pose,
+                step_metrics=all_metrics,
+            )
+
+        self._safe_release_and_detach()
+        return PickAndPlaceResult(
+            success=True,
+            reason="pick_and_place_executed",
+            markers_detected=len(markers),
+            executed_steps=total_steps,
+            target_marker_id=marker.marker_id,
+            target_pose=target_pose,
+            step_metrics=all_metrics,
+        )
+
+    def _execute_motion(
+        self,
+        *,
+        controller: JointControllerLike,
+        target_pose: Pose,
+        target_marker_id: int,
+        max_control_steps: int | None,
+        step_index_offset: int,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
+        state_at_start = self._robot.get_state()
         try:
             goal_joints = self._kinematics.inverse_kinematics(
                 target_pose=target_pose,
-                seed_joints_positions=initial_state.joints_positions,
+                seed_joints_positions=state_at_start.joints_positions,
             )
         except Exception:
             self._robot.step(reference_xyz=target_pose.xyz)
-            return PickAndPlaceResult(
-                success=False,
-                reason="inverse_kinematics_failed",
-                markers_detected=len(markers),
-                executed_steps=0,
-                target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-            )
+            return False, "inverse_kinematics_failed", 0, []
 
         trajectory = self._trajectory_generator.generate(
-            q0=initial_state.joints_positions,
+            q0=state_at_start.joints_positions,
             qf=goal_joints,
             tf=self._trajectory_duration_s,
             dt=self._control_dt_s,
@@ -176,6 +295,7 @@ class PickAndPlaceUseCase:
             self._visualization.update_reference_path(reference_path)
 
         executed_steps = 0
+        step_metrics: list[dict[str, float | int | str | None]] = []
         for q_ref, dq_ref in zip(
             trajectory.joints_positions,
             trajectory.joints_velocities,
@@ -200,26 +320,79 @@ class PickAndPlaceUseCase:
             if self._visualization is not None:
                 self._visualization.update_robot_state(state)
 
+            step_index = step_index_offset + executed_steps + 1
+            q_error = tuple(
+                float(q_ref_i - q_i)
+                for q_ref_i, q_i in zip(q_ref, state.joints_positions)
+            )
+            tau_tuple = self._extract_numeric_tuple(
+                getattr(control, "joints_torques", None)
+            )
+            tau_sat_count = 0
+            if (
+                tau_tuple is not None
+                and self._joints_torques_min is not None
+                and self._joints_torques_max is not None
+            ):
+                tau_sat_count = self._count_saturated(
+                    tau_tuple=tau_tuple,
+                    tau_min=self._joints_torques_min,
+                    tau_max=self._joints_torques_max,
+                )
+
+            step_metrics.append(
+                {
+                    "step_index": step_index,
+                    "t_s": step_index * self._control_dt_s,
+                    "controller": self._controller_name(controller),
+                    "target_marker_id": target_marker_id,
+                    "q_error_l2": self._norm_l2(q_error),
+                    "q_error_linf": self._norm_linf(q_error),
+                    "dq_ref_l2": self._norm_l2(dq_ref),
+                    "dq_cmd_l2": self._norm_l2(control.joints_velocities),
+                    "dq_meas_l2": self._norm_l2(state.joints_velocities),
+                    "tau_cmd_l2": None if tau_tuple is None else self._norm_l2(tau_tuple),
+                    "tau_cmd_max_abs": (
+                        None if tau_tuple is None else self._max_abs(tau_tuple)
+                    ),
+                    "tau_saturated_count": tau_sat_count,
+                }
+            )
+
             executed_steps += 1
 
         self._robot.command_joints_velocities(
-            tuple(0.0 for _ in initial_state.joints_positions)
+            tuple(0.0 for _ in state_at_start.joints_positions)
         )
         self._robot.step(reference_xyz=target_pose.xyz)
 
         completed_trajectory = executed_steps == len(trajectory.joints_positions)
-        return PickAndPlaceResult(
-            success=completed_trajectory,
-            reason=(
-                "trajectory_executed"
-                if completed_trajectory
-                else "max_control_steps_reached"
-            ),
-            markers_detected=len(markers),
-            executed_steps=executed_steps,
-            target_marker_id=marker.marker_id,
-            target_pose=target_pose,
+        if completed_trajectory:
+            return True, "trajectory_executed", executed_steps, step_metrics
+        return False, "max_control_steps_reached", executed_steps, step_metrics
+
+    def _build_release_pose(self, target_pose: Pose) -> Pose:
+        release_height_delta_m = max(0.05, self._target_height_offset_m)
+        return Pose(
+            x=target_pose.x,
+            y=target_pose.y,
+            z=target_pose.z + release_height_delta_m,
+            roll=target_pose.roll,
+            pitch=target_pose.pitch,
+            yaw=target_pose.yaw,
         )
+
+    def _safe_release_and_detach(self) -> None:
+        if self._tracked_object is not None:
+            try:
+                self._tracked_object.detach_from_gripper()
+            except Exception:
+                pass
+        if self._gripper is not None:
+            try:
+                self._gripper.release()
+            except Exception:
+                pass
 
     def shutdown(self) -> None:
         stop_method = getattr(self._robot, "stop", None)
@@ -382,3 +555,54 @@ class PickAndPlaceUseCase:
                     f"`{gain_name}` must contain numeric values."
                 ) from None
         return tuple(matrix_rows)
+
+    @staticmethod
+    def _controller_name(controller: JointControllerLike) -> str:
+        if isinstance(controller, JointPDController):
+            return "dynamic_pd"
+        if isinstance(controller, JointPIController):
+            return "kinematic_pi"
+        return controller.__class__.__name__.lower()
+
+    @staticmethod
+    def _extract_numeric_tuple(values: object) -> tuple[float, ...] | None:
+        if values is None:
+            return None
+        try:
+            tuple_values = tuple(float(value) for value in values)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return tuple_values
+
+    @staticmethod
+    def _norm_l2(values: Sequence[float]) -> float:
+        return math.sqrt(sum(float(value) ** 2 for value in values))
+
+    @staticmethod
+    def _norm_linf(values: Sequence[float]) -> float:
+        if len(values) == 0:
+            return 0.0
+        return max(abs(float(value)) for value in values)
+
+    @staticmethod
+    def _max_abs(values: Sequence[float]) -> float:
+        if len(values) == 0:
+            return 0.0
+        return max(abs(float(value)) for value in values)
+
+    @staticmethod
+    def _count_saturated(
+        *,
+        tau_tuple: Sequence[float],
+        tau_min: Sequence[float],
+        tau_max: Sequence[float],
+    ) -> int:
+        epsilon = 1e-9
+        count = 0
+        for tau_i, tau_min_i, tau_max_i in zip(tau_tuple, tau_min, tau_max):
+            if abs(float(tau_i) - float(tau_min_i)) <= epsilon:
+                count += 1
+                continue
+            if abs(float(tau_i) - float(tau_max_i)) <= epsilon:
+                count += 1
+        return count

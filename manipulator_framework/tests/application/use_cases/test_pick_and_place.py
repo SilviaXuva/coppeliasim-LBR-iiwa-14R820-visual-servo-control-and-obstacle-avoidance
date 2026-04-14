@@ -169,6 +169,45 @@ class _FakeDynamics:
 
 
 
+class _FakeGripper:
+    def __init__(self, grasp_result: bool = True) -> None:
+        self.grasp_result = grasp_result
+        self.calls: list[str] = []
+
+    def open(self) -> None:
+        self.calls.append("open")
+
+    def close(self) -> None:
+        self.calls.append("close")
+
+    def grasp(self) -> bool:
+        self.calls.append("grasp")
+        return self.grasp_result
+
+    def release(self) -> None:
+        self.calls.append("release")
+
+
+class _FakeTrackedObject:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self._pose = Pose(0.0, 0.0, 0.0)
+
+    def get_pose(self) -> Pose:
+        self.calls.append("get_pose")
+        return self._pose
+
+    def set_pose(self, pose: Pose) -> None:
+        self.calls.append("set_pose")
+        self._pose = pose
+
+    def attach_to_gripper(self) -> None:
+        self.calls.append("attach_to_gripper")
+
+    def detach_from_gripper(self) -> None:
+        self.calls.append("detach_from_gripper")
+
+
 class _FakeVisualization:
     def __init__(self) -> None:
         self.robot_updates = 0
@@ -378,6 +417,36 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
         self.assertEqual(result.reason, "trajectory_executed")
         self.assertEqual(result.executed_steps, 3)
         self.assertEqual(len(robot.velocity_commands), 4)
+
+    def test_run_once_with_gripper_and_object_ports(self) -> None:
+        robot = _FakeRobot(joints_count=3)
+        gripper = _FakeGripper(grasp_result=True)
+        tracked_object = _FakeTrackedObject()
+        use_case = PickAndPlaceUseCase(
+            robot=robot,
+            camera=_FakeCamera(),
+            perception=_FakePerception((self.marker,)),
+            kinematics=_FakeKinematics(),
+            trajectory_generator=_FakeTrajectoryGenerator(self.trajectory),
+            controller=_FakeController(),
+            gripper=gripper,
+            tracked_object=tracked_object,
+            trajectory_duration_s=1.0,
+            control_dt_s=0.1,
+        )
+
+        result = use_case.run_once()
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.reason, "pick_and_place_executed")
+        self.assertEqual(result.executed_steps, 6)
+        self.assertEqual(gripper.calls, ["open", "grasp", "release"])
+        self.assertEqual(
+            tracked_object.calls,
+            ["attach_to_gripper", "detach_from_gripper"],
+        )
+        self.assertEqual(len(robot.velocity_commands), 8)  # 2x (3 control + stop)
+        self.assertEqual(len(result.step_metrics), 6)
 
 
 

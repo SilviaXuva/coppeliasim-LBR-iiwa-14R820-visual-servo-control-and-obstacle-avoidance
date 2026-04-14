@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from numbers import Real
+import platform
 import random
+import subprocess
+import sys
 from typing import Any
 from uuid import uuid4
 
-from ...core.controllers.dynamic.joint_pd import JointPDController
-from ...core.controllers.kinematic.joint_pi import JointPIController
 from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.models.robot_state import RobotState
@@ -27,6 +29,8 @@ from ..use_cases.pick_and_place import PickAndPlaceResult, PickAndPlaceUseCase
 GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
 _EXPERIMENT_PICK_AND_PLACE_KIN_PI = "pick_and_place_kin_pi"
 _EXPERIMENT_PICK_AND_PLACE_DYN_PD = "pick_and_place_dyn_pd"
+_ARTIFACT_SCHEMA_VERSION = "1.0"
+_CONVERGENCE_EPSILON_L2 = 0.02
 
 
 @dataclass(slots=True)
@@ -179,32 +183,120 @@ class ExperimentRunner:
             raise ValueError("ExperimentRunner must be created from config to run_experiment().")
 
         self._set_random_seed(self._config.runtime.random_seed)
+        controller_name = (
+            "dynamic_pd"
+            if self._config.experiment == _EXPERIMENT_PICK_AND_PLACE_DYN_PD
+            else "kinematic_pi"
+        )
 
         started_at = datetime.now(timezone.utc)
-        try:
-            cycle_results = self.run(
-                cycles=self._config.runtime.cycles,
-                max_control_steps_per_cycle=self._config.runtime.max_control_steps_per_cycle,
-                stop_on_success=self._config.runtime.stop_on_success,
+        events_rows: list[dict[str, Any]] = [
+            self._make_event(
+                event_type="run_started",
+                severity="info",
+                started_at=started_at,
+                cycle_index=None,
+                step_index=None,
+                data={"controller": controller_name},
             )
+        ]
+        cycle_results: list[PickAndPlaceResult] = []
+        try:
+            for cycle_index in range(1, self._config.runtime.cycles + 1):
+                events_rows.append(
+                    self._make_event(
+                        event_type="cycle_started",
+                        severity="info",
+                        started_at=started_at,
+                        cycle_index=cycle_index,
+                        step_index=None,
+                        data={},
+                    )
+                )
+                result = self._use_case.run_once(
+                    max_control_steps=self._config.runtime.max_control_steps_per_cycle
+                )
+                cycle_results.append(result)
+                events_rows.append(
+                    self._make_event(
+                        event_type="cycle_finished",
+                        severity="info",
+                        started_at=started_at,
+                        cycle_index=cycle_index,
+                        step_index=None,
+                        data={
+                            "success": result.success,
+                            "reason": result.reason,
+                            "executed_steps": result.executed_steps,
+                            "target_marker_id": result.target_marker_id,
+                        },
+                    )
+                )
+                if self._config.runtime.stop_on_success and result.success:
+                    break
         finally:
             self._shutdown_use_case(self._use_case)
         finished_at = datetime.now(timezone.utc)
+        cycle_results_tuple = tuple(cycle_results)
+
+        timeseries_rows = self._build_timeseries_rows(
+            run_id="",
+            cycle_results=cycle_results_tuple,
+        )
 
         metrics = self._collect_metrics(
             started_at=started_at,
             finished_at=finished_at,
-            cycle_results=cycle_results,
+            cycles_planned=self._config.runtime.cycles,
+            cycle_results=cycle_results_tuple,
+            timeseries_rows=timeseries_rows,
         )
 
         run_id = f"{started_at.strftime('%Y%m%dT%H%M%S')}_{uuid4().hex[:8]}"
+        timeseries_rows = self._build_timeseries_rows(
+            run_id=run_id,
+            cycle_results=cycle_results_tuple,
+        )
+        convergence_events = self._build_convergence_events(
+            started_at=started_at,
+            cycle_results=cycle_results_tuple,
+        )
+        events_rows.extend(convergence_events)
+        events_rows.append(
+            self._make_event(
+                event_type="run_finished",
+                severity="info",
+                started_at=started_at,
+                cycle_index=None,
+                step_index=None,
+                data={"success_rate": metrics["success_rate"]},
+            )
+        )
+        summary = self._build_summary(
+            run_id=run_id,
+            controller=controller_name,
+            metrics=metrics,
+        )
+        config_snapshot = self._build_config_snapshot(
+            run_id=run_id,
+            config=self._config,
+        )
+        events_payload = {
+            "schema_version": _ARTIFACT_SCHEMA_VERSION,
+            "run_id": run_id,
+            "events": events_rows,
+        }
         artifacts: dict[str, str] = {}
         if self._results_repository is not None:
             artifacts = self._results_repository.save_experiment_results(
                 experiment=self._config.experiment,
                 config=asdict(self._config),
                 metrics=metrics,
-                cycles_rows=self._cycle_results_to_rows(cycle_results),
+                cycles_rows=self._cycle_results_to_rows(cycle_results_tuple),
+                summary=summary,
+                config_snapshot=config_snapshot,
+                timeseries_rows=timeseries_rows,
+                events=events_payload,
                 run_id=run_id,
                 save_json=self._config.persistence.save_json,
                 save_csv=self._config.persistence.save_csv,
@@ -215,7 +307,7 @@ class ExperimentRunner:
             run_id=run_id,
             metrics=metrics,
             artifacts=artifacts,
-            cycle_results=cycle_results,
+            cycle_results=cycle_results_tuple,
         )
 
     @staticmethod
@@ -228,12 +320,14 @@ class ExperimentRunner:
         except Exception:
             pass
 
-    @staticmethod
     def _collect_metrics(
+        self,
         *,
         started_at: datetime,
         finished_at: datetime,
+        cycles_planned: int,
         cycle_results: tuple[PickAndPlaceResult, ...],
+        timeseries_rows: Sequence[Mapping[str, Any]],
     ) -> dict[str, Any]:
         cycles_executed = len(cycle_results)
         success_count = sum(1 for result in cycle_results if result.success)
@@ -241,18 +335,310 @@ class ExperimentRunner:
         total_steps = sum(result.executed_steps for result in cycle_results)
         mean_steps = (total_steps / cycles_executed) if cycles_executed > 0 else 0.0
         duration_s = (finished_at - started_at).total_seconds()
+        reason_counts = dict(Counter(result.reason for result in cycle_results))
+
+        q_error_l2_values = [
+            float(row["q_error_l2"])
+            for row in timeseries_rows
+            if row.get("q_error_l2") is not None
+        ]
+        q_error_linf_values = [
+            float(row["q_error_linf"])
+            for row in timeseries_rows
+            if row.get("q_error_linf") is not None
+        ]
+        dq_cmd_l2_values = [
+            float(row["dq_cmd_l2"])
+            for row in timeseries_rows
+            if row.get("dq_cmd_l2") is not None
+        ]
+        tau_cmd_l2_values = [
+            float(row["tau_cmd_l2"])
+            for row in timeseries_rows
+            if row.get("tau_cmd_l2") is not None
+        ]
+        tau_sat_counts = [
+            int(row["tau_saturated_count"])
+            for row in timeseries_rows
+            if row.get("tau_saturated_count") is not None
+        ]
+        cycles_with_torque_saturation = sum(
+            1
+            for result in cycle_results
+            if any(
+                int(step_row.get("tau_saturated_count", 0) or 0) > 0
+                for step_row in result.step_metrics
+            )
+        )
+
+        converged_steps = [
+            first_step
+            for first_step in (
+                self._first_converged_step(result.step_metrics)
+                for result in cycle_results
+            )
+            if first_step is not None
+        ]
+        error_decay_ratios = [
+            ratio
+            for ratio in (
+                self._error_decay_ratio(result.step_metrics)
+                for result in cycle_results
+            )
+            if ratio is not None
+        ]
+        q_error_l2_values_sorted = sorted(q_error_l2_values)
+        p95_error = (
+            q_error_l2_values_sorted[
+                min(
+                    len(q_error_l2_values_sorted) - 1,
+                    int(0.95 * (len(q_error_l2_values_sorted) - 1)),
+                )
+            ]
+            if len(q_error_l2_values_sorted) > 0
+            else None
+        )
 
         return {
+            "schema_version": _ARTIFACT_SCHEMA_VERSION,
             "started_at_utc": started_at.isoformat(),
             "finished_at_utc": finished_at.isoformat(),
             "duration_s": duration_s,
+            "cycles_planned": cycles_planned,
             "cycles_executed": cycles_executed,
             "success_count": success_count,
             "failure_count": failure_count,
             "success_rate": (success_count / cycles_executed) if cycles_executed > 0 else 0.0,
             "total_executed_steps": total_steps,
             "mean_executed_steps": mean_steps,
+            "aggregate": {
+                "total_control_steps": total_steps,
+                "mean_control_steps_per_cycle": mean_steps,
+            },
+            "comparison": {
+                "tracking_error_l2_mean": (
+                    sum(q_error_l2_values) / len(q_error_l2_values)
+                    if len(q_error_l2_values) > 0
+                    else None
+                ),
+                "tracking_error_l2_p95": p95_error,
+                "command_velocity_l2_mean": (
+                    sum(dq_cmd_l2_values) / len(dq_cmd_l2_values)
+                    if len(dq_cmd_l2_values) > 0
+                    else None
+                ),
+                "command_torque_l2_mean": (
+                    sum(tau_cmd_l2_values) / len(tau_cmd_l2_values)
+                    if len(tau_cmd_l2_values) > 0
+                    else None
+                ),
+            },
+            "convergence": {
+                "epsilon_l2": _CONVERGENCE_EPSILON_L2,
+                "converged_cycles": len(converged_steps),
+                "converged_rate": (
+                    len(converged_steps) / cycles_executed if cycles_executed > 0 else 0.0
+                ),
+                "median_first_converged_step": self._median_int(converged_steps),
+                "error_decay_ratio_mean": (
+                    sum(error_decay_ratios) / len(error_decay_ratios)
+                    if len(error_decay_ratios) > 0
+                    else None
+                ),
+            },
+            "safety_deviation": {
+                "max_tracking_error_linf": max(q_error_linf_values) if len(q_error_linf_values) > 0 else None,
+                "cycles_with_marker_loss": reason_counts.get("no_marker_detected_with_world_pose", 0),
+                "cycles_with_ik_failure": reason_counts.get("inverse_kinematics_failed", 0),
+                "cycles_with_torque_saturation": cycles_with_torque_saturation,
+                "torque_saturation_step_ratio": (
+                    sum(1 for count in tau_sat_counts if count > 0) / len(tau_sat_counts)
+                    if len(tau_sat_counts) > 0
+                    else 0.0
+                ),
+            },
+            "reason_counts": reason_counts,
         }
+
+    @staticmethod
+    def _build_timeseries_rows(
+        *,
+        run_id: str,
+        cycle_results: tuple[PickAndPlaceResult, ...],
+    ) -> tuple[dict[str, Any], ...]:
+        rows: list[dict[str, Any]] = []
+        for cycle_index, result in enumerate(cycle_results, start=1):
+            for step_row in result.step_metrics:
+                row = dict(step_row)
+                row["run_id"] = run_id
+                row["cycle_index"] = cycle_index
+                rows.append(row)
+        return tuple(rows)
+
+    def _build_convergence_events(
+        self,
+        *,
+        started_at: datetime,
+        cycle_results: tuple[PickAndPlaceResult, ...],
+    ) -> tuple[dict[str, Any], ...]:
+        events: list[dict[str, Any]] = []
+        for cycle_index, result in enumerate(cycle_results, start=1):
+            first_step = self._first_converged_step(result.step_metrics)
+            if first_step is None:
+                continue
+            step_row = result.step_metrics[first_step - 1]
+            events.append(
+                self._make_event(
+                    event_type="convergence_reached",
+                    severity="info",
+                    started_at=started_at,
+                    cycle_index=cycle_index,
+                    step_index=first_step,
+                    data={"q_error_l2": step_row.get("q_error_l2")},
+                )
+            )
+        return tuple(events)
+
+    def _build_summary(
+        self,
+        *,
+        run_id: str,
+        controller: str,
+        metrics: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": _ARTIFACT_SCHEMA_VERSION,
+            "run_id": run_id,
+            "experiment": self._config.experiment if self._config is not None else None,
+            "controller": controller,
+            "backend": self._config.runtime.backend if self._config is not None else None,
+            "started_at_utc": metrics.get("started_at_utc"),
+            "finished_at_utc": metrics.get("finished_at_utc"),
+            "duration_s": metrics.get("duration_s"),
+            "cycles_planned": metrics.get("cycles_planned"),
+            "cycles_executed": metrics.get("cycles_executed"),
+            "success_count": metrics.get("success_count"),
+            "failure_count": metrics.get("failure_count"),
+            "success_rate": metrics.get("success_rate"),
+            "primary_reason_counts": metrics.get("reason_counts", {}),
+        }
+
+    @staticmethod
+    def _build_config_snapshot(
+        *,
+        run_id: str,
+        config: ExperimentConfig,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": _ARTIFACT_SCHEMA_VERSION,
+            "run_id": run_id,
+            "experiment_config": asdict(config),
+            "reproducibility": {
+                "random_seed": config.runtime.random_seed,
+                "python_version": sys.version,
+                "platform": platform.platform(),
+                "git_commit": ExperimentRunner._git_commit(),
+                "git_dirty": ExperimentRunner._git_dirty(),
+            },
+            "units": {
+                "time": "s",
+                "position": "m",
+                "angle": "rad",
+                "joint_velocity": "rad/s",
+                "joint_torque": "N.m",
+            },
+        }
+
+    @staticmethod
+    def _first_converged_step(
+        step_metrics: Sequence[Mapping[str, Any]],
+    ) -> int | None:
+        for step_row in step_metrics:
+            value = step_row.get("q_error_l2")
+            if value is None:
+                continue
+            if float(value) <= _CONVERGENCE_EPSILON_L2:
+                step_index = step_row.get("step_index")
+                if step_index is None:
+                    continue
+                return int(step_index)
+        return None
+
+    @staticmethod
+    def _error_decay_ratio(
+        step_metrics: Sequence[Mapping[str, Any]],
+    ) -> float | None:
+        q_error_l2 = [
+            float(step_row["q_error_l2"])
+            for step_row in step_metrics
+            if step_row.get("q_error_l2") is not None
+        ]
+        if len(q_error_l2) < 2:
+            return None
+        initial = q_error_l2[0]
+        if abs(initial) < 1e-12:
+            return 0.0
+        return q_error_l2[-1] / initial
+
+    @staticmethod
+    def _median_int(values: Sequence[int]) -> int | None:
+        if len(values) == 0:
+            return None
+        sorted_values = sorted(int(value) for value in values)
+        middle = len(sorted_values) // 2
+        if len(sorted_values) % 2 == 1:
+            return sorted_values[middle]
+        return int(round((sorted_values[middle - 1] + sorted_values[middle]) / 2.0))
+
+    @staticmethod
+    def _make_event(
+        *,
+        event_type: str,
+        severity: str,
+        started_at: datetime,
+        cycle_index: int | None,
+        step_index: int | None,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "ts_utc": datetime.now(timezone.utc).isoformat(),
+            "elapsed_s": max(
+                0.0,
+                (datetime.now(timezone.utc) - started_at).total_seconds(),
+            ),
+            "cycle_index": cycle_index,
+            "step_index": step_index,
+            "type": event_type,
+            "severity": severity,
+            "data": dict(data),
+        }
+
+    @staticmethod
+    def _git_commit() -> str | None:
+        try:
+            completed = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            commit = completed.stdout.strip()
+            return commit or None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _git_dirty() -> bool:
+        try:
+            completed = subprocess.run(
+                ["git", "status", "--porcelain"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return len(completed.stdout.strip()) > 0
+        except Exception:
+            return False
 
     @staticmethod
     def _cycle_results_to_rows(
