@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from time import sleep
 from typing import Callable
 
-from ...core.ports.gripper_port import GripperPort
+from ....core.ports.gripper_port import GripperPort
 
 
 class CoppeliaGripperAdapter(GripperPort):

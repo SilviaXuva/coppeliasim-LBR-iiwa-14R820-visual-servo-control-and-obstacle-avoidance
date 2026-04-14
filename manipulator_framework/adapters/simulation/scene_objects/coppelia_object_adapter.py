@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ...core.models.pose import Pose
-from ...core.ports.object_port import ObjectPort
+from ....core.models.pose import Pose
+from ....core.ports.object_port import ObjectPort
 
 
 class CoppeliaObjectAdapter(ObjectPort):
