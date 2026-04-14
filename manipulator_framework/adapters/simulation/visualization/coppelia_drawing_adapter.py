@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 import math
 
-from ...core.models.pose import Pose
-from ...core.ports.drawing_port import DrawingPort
+from ....core.models.pose import Pose
+from ....core.ports.drawing_port import DrawingPort
 
 
 class CoppeliaDrawingAdapter(DrawingPort):

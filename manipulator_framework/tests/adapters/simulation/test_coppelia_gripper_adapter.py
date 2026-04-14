@@ -1,6 +1,6 @@
 import unittest
 
-from manipulator_framework.adapters.simulation.coppelia_gripper_adapter import (
+from manipulator_framework.adapters.simulation.scene_objects.coppelia_gripper_adapter import (
     CoppeliaGripperAdapter,
 )
 

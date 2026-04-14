@@ -4,10 +4,27 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from manipulator_framework.config.experiment_config import load_experiment_config
+from manipulator_framework.config.experiment_config import (
+    CoppeliaConfig,
+    PickAndPlaceConfig,
+    default_experiment_config,
+    load_experiment_config,
+)
 
 
 class TestExperimentConfigEnvOverride(unittest.TestCase):
+    def test_public_constructors_keep_defaults(self) -> None:
+        pick_cfg = PickAndPlaceConfig()
+        coppelia_cfg = CoppeliaConfig()
+        self.assertEqual(len(pick_cfg.tau_min), 7)
+        self.assertEqual(len(pick_cfg.tau_max), 7)
+        self.assertEqual(coppelia_cfg.host, "localhost")
+        self.assertEqual(coppelia_cfg.port, 23000)
+
+    def test_default_experiment_config_remains_available(self) -> None:
+        config = default_experiment_config("pick_and_place_kin_pi")
+        self.assertEqual(config.experiment, "pick_and_place_kin_pi")
+
     def test_supports_dynamic_pd_experiment_name(self) -> None:
         config = load_experiment_config("pick_and_place_dyn_pd")
         self.assertEqual(config.experiment, "pick_and_place_dyn_pd")
@@ -89,6 +106,37 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         self.assertEqual(config.pick_and_place.pre_grasp_offset, (0.0, 0.0, 0.12))
         self.assertEqual(config.pick_and_place.lift_offset, (0.0, 0.0, 0.2))
         self.assertEqual(config.pick_and_place.retreat_offset, (0.0, 0.0, 0.08))
+
+    def test_coppelia_gripper_and_object_paths_loaded_from_json(self) -> None:
+        fake_config_path = "manipulator_framework/tests/config/fake_experiment.json"
+        fake_json_payload = json.dumps(
+            {
+                "coppelia": {
+                    "gripper_joints_paths": ["./active1", "./active2"],
+                    "gripper_proximity_sensor_path": "./attachProxSensor",
+                    "gripper_attach_path": "./attachPoint",
+                    "grasp_object_path": "./red1",
+                    "tracked_object_path": "./red1",
+                }
+            }
+        )
+        with patch("pathlib.Path.read_text", return_value=fake_json_payload):
+            config = load_experiment_config(
+                "pick_and_place_kin_pi",
+                config_path=fake_config_path,
+            )
+
+        self.assertEqual(
+            config.coppelia.gripper_joints_paths,
+            ("./active1", "./active2"),
+        )
+        self.assertEqual(
+            config.coppelia.gripper_proximity_sensor_path,
+            "./attachProxSensor",
+        )
+        self.assertEqual(config.coppelia.gripper_attach_path, "./attachPoint")
+        self.assertEqual(config.coppelia.grasp_object_path, "./red1")
+        self.assertEqual(config.coppelia.tracked_object_path, "./red1")
 
     def test_camera_frame_rotation_matches_legacy_yaw_180(self) -> None:
         config = load_experiment_config("pick_and_place_kin_pi")

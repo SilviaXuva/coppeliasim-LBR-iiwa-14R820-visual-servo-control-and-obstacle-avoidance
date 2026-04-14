@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...core.ports.conveyor_port import ConveyorPort
+from ....core.ports.conveyor_port import ConveyorPort
 
 
 class CoppeliaConveyorAdapter(ConveyorPort):
