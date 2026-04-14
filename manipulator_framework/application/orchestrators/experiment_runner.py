@@ -19,7 +19,9 @@ from ...core.ports.camera_port import CameraPort
 from ...core.ports.conveyor_port import ConveyorPort
 from ...core.ports.dynamics_port import DynamicsPort
 from ...core.ports.gripper_port import GripperPort
+from ...core.ports.gripper_port import GripperPort
 from ...core.ports.kinematics_port import KinematicsPort
+from ...core.ports.object_port import ObjectPort
 from ...core.ports.object_port import ObjectPort
 from ...core.ports.perception_port import PerceptionPort
 from ...core.ports.robot_port import RobotPort
@@ -45,6 +47,8 @@ class PickAndPlaceWiring:
     dynamics: DynamicsPort | None = None
     visualization: VisualizationPort | None = None
     conveyor: ConveyorPort | None = None
+    gripper: GripperPort | None = None
+    tracked_object: ObjectPort | None = None
     gripper: GripperPort | None = None
     tracked_object: ObjectPort | None = None
 
@@ -108,6 +112,8 @@ class ExperimentRunner:
             conveyor=wiring.conveyor,
             gripper=wiring.gripper,
             tracked_object=wiring.tracked_object,
+            gripper=wiring.gripper,
+            tracked_object=wiring.tracked_object,
             trajectory_generator=QuinticJointTrajectory(),
             trajectory_duration_s=trajectory_duration_s,
             control_dt_s=control_dt_s,
@@ -158,6 +164,8 @@ class ExperimentRunner:
             dynamics=wiring.dynamics,
             visualization=wiring.visualization,
             conveyor=wiring.conveyor,
+            gripper=wiring.gripper,
+            tracked_object=wiring.tracked_object,
             gripper=wiring.gripper,
             tracked_object=wiring.tracked_object,
             trajectory_generator=QuinticJointTrajectory(),
@@ -738,6 +746,8 @@ class ExperimentRunner:
             conveyor=None,
             gripper=None,
             tracked_object=None,
+            gripper=None,
+            tracked_object=None,
         )
 
     @classmethod
@@ -796,6 +806,23 @@ class ExperimentRunner:
                 object_path=config.coppelia.tracked_object_path,
                 gripper_attach_path=config.coppelia.gripper_attach_path,
             )
+        gripper: GripperPort | None = None
+        tracked_object: ObjectPort | None = None
+
+        if len(config.coppelia.gripper_joints_paths) > 0:
+            gripper = CoppeliaGripperAdapter(
+                sim=robot.sim,
+                joints_paths=config.coppelia.gripper_joints_paths,
+                proximity_sensor_path=config.coppelia.gripper_proximity_sensor_path,
+                grasp_object_path=config.coppelia.grasp_object_path,
+                step_callback=robot.step,
+            )
+        if config.coppelia.tracked_object_path is not None:
+            tracked_object = CoppeliaObjectAdapter(
+                sim=robot.sim,
+                object_path=config.coppelia.tracked_object_path,
+                gripper_attach_path=config.coppelia.gripper_attach_path,
+            )
 
         # Matches legacy startup behavior: one simulation step before first vision read.
         robot.step()
@@ -808,6 +835,8 @@ class ExperimentRunner:
             dynamics=dynamics,
             visualization=visualization,
             conveyor=None,
+            gripper=gripper,
+            tracked_object=tracked_object,
             gripper=gripper,
             tracked_object=tracked_object,
         )
