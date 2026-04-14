@@ -5,11 +5,13 @@ from dataclasses import dataclass
 import math
 from numbers import Real
 from typing import Callable, Protocol
+import numpy as np
 
 from ...core.controllers.kinematic.joint_pi import JointPIController
 from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.ports.camera_port import CameraPort
+from ...core.ports.conveyor_port import ConveyorPort
 from ...core.ports.dynamics_port import DynamicsPort
 from ...core.ports.gripper_port import GripperPort
 from ...core.ports.kinematics_port import KinematicsPort
@@ -29,6 +31,10 @@ class PickAndPlaceResult:
     executed_steps: int
     target_marker_id: int | None = None
     target_pose: Pose | None = None
+    pick_success: bool = False
+    place_success: bool = False
+    termination_reason: str = ""
+    completed_phases: tuple[str, ...] = ()
     step_metrics: tuple[dict[str, float | int | str | None], ...] = ()
 
 
@@ -62,6 +68,10 @@ class JointControllerLike(Protocol):
 
 
 GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
+_HOME_JOINTS_RAD = tuple(
+    float(value)
+    for value in np.deg2rad([0.0, 0.0, 0.0, 90.0, 0.0, -90.0, 90.0])
+)
 
 
 class PickAndPlaceUseCase:
@@ -91,6 +101,11 @@ class PickAndPlaceUseCase:
         use_legacy_gripper_rotation: bool = True,
         gripper: GripperPort | None = None,
         tracked_object: ObjectPort | None = None,
+        conveyor: ConveyorPort | None = None,
+        place_pose: Pose | None = None,
+        pre_grasp_offset: Sequence[float] = (0.0, 0.0, 0.10),
+        lift_offset: Sequence[float] = (0.0, 0.0, 0.10),
+        retreat_offset: Sequence[float] = (0.0, 0.0, 0.10),
         marker_selector: Callable[[tuple[MarkerState, ...]], MarkerState | None]
         | None = None,
     ) -> None:
@@ -130,135 +145,479 @@ class PickAndPlaceUseCase:
         self._use_legacy_gripper_rotation = bool(use_legacy_gripper_rotation)
         self._gripper = gripper
         self._tracked_object = tracked_object
+        self._conveyor = conveyor
+        self._place_pose = place_pose
+        self._pre_grasp_offset = self._normalize_xyz_offset(
+            pre_grasp_offset,
+            "pre_grasp_offset",
+        )
+        self._lift_offset = self._normalize_xyz_offset(
+            lift_offset,
+            "lift_offset",
+        )
+        self._retreat_offset = self._normalize_xyz_offset(
+            retreat_offset,
+            "retreat_offset",
+        )
         self._marker_selector = (
             marker_selector if marker_selector is not None else self._default_marker_selector
         )
 
     def run_once(self, max_control_steps: int | None = None) -> PickAndPlaceResult:
-        marker, markers = self._detect_target_marker()
+        return self.execute(max_control_steps=max_control_steps)
+
+    def execute(self, max_control_steps: int | None = None) -> PickAndPlaceResult:
+        self._safe_stop_conveyor()
+        try:
+            current_state = self._robot.get_state()
+            self._ensure_controller(joints_count=len(current_state.joints_positions))
+            controller = self._controller
+            if controller is None:
+                raise RuntimeError("Joint PI controller was not initialized.")
+
+            if not self._supports_full_pick_and_place():
+                return self._execute_approach_only(
+                    controller=controller,
+                    max_control_steps=max_control_steps,
+                )
+            return self._execute_full_pick_and_place(
+                controller=controller,
+                max_control_steps=max_control_steps,
+            )
+        finally:
+            self._safe_start_conveyor()
+
+    def _execute_approach_only(
+        self,
+        *,
+        controller: JointControllerLike,
+        max_control_steps: int | None,
+    ) -> PickAndPlaceResult:
+        marker, markers = self._detect_target()
         if marker is None:
-            return PickAndPlaceResult(
-                success=False,
-                reason="no_marker_detected_with_world_pose",
+            return self._failure_result(
+                termination_reason="no_marker_detected_with_world_pose",
                 markers_detected=len(markers),
                 executed_steps=0,
+                target_marker_id=None,
+                target_pose=None,
+                completed_phases=(),
                 step_metrics=(),
+                pick_success=False,
+                place_success=False,
             )
 
-        target_pose = self._build_target_pose(marker)
-
-        current_state = self._robot.get_state()
-        self._ensure_controller(joints_count=len(current_state.joints_positions))
-        controller = self._controller
-        if controller is None:
-            raise RuntimeError("Joint PI controller was not initialized.")
-
-        if self._gripper is not None:
-            self._gripper.open()
-
-        first_success, first_reason, first_steps, first_metrics = self._execute_motion(
+        grasp_pose = self._compute_grasp_pose(marker)
+        success, reason, executed_steps, rows = self._move_to_pose(
             controller=controller,
-            target_pose=target_pose,
+            target_pose=grasp_pose,
             target_marker_id=marker.marker_id,
+            phase_name="approach_target",
             max_control_steps=max_control_steps,
             step_index_offset=0,
         )
-        if not first_success:
-            return PickAndPlaceResult(
-                success=False,
-                reason=first_reason,
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
                 markers_detected=len(markers),
-                executed_steps=first_steps,
+                executed_steps=executed_steps,
                 target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-                step_metrics=tuple(first_metrics),
+                target_pose=grasp_pose,
+                completed_phases=("detect_target",),
+                step_metrics=tuple(rows),
+                pick_success=False,
+                place_success=False,
             )
 
-        # Preserve legacy/simple behavior when no gripper/object integration is configured.
-        if self._gripper is None and self._tracked_object is None:
-            return PickAndPlaceResult(
-                success=True,
-                reason="trajectory_executed",
-                markers_detected=len(markers),
-                executed_steps=first_steps,
-                target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-                step_metrics=tuple(first_metrics),
-            )
-
-        if self._gripper is None:
-            return PickAndPlaceResult(
-                success=False,
-                reason="gripper_not_configured",
-                markers_detected=len(markers),
-                executed_steps=first_steps,
-                target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-                step_metrics=tuple(first_metrics),
-            )
-
-        if not self._gripper.grasp():
-            self._safe_release_and_detach()
-            return PickAndPlaceResult(
-                success=False,
-                reason="grasp_failed",
-                markers_detected=len(markers),
-                executed_steps=first_steps,
-                target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-                step_metrics=tuple(first_metrics),
-            )
-
-        if self._tracked_object is not None:
-            try:
-                self._tracked_object.attach_to_gripper()
-            except Exception:
-                self._safe_release_and_detach()
-                return PickAndPlaceResult(
-                    success=False,
-                    reason="attach_to_gripper_failed",
-                    markers_detected=len(markers),
-                    executed_steps=first_steps,
-                    target_marker_id=marker.marker_id,
-                    target_pose=target_pose,
-                    step_metrics=tuple(first_metrics),
-                )
-
-        remaining_steps = None
-        if max_control_steps is not None:
-            remaining_steps = max(max_control_steps - first_steps, 0)
-        release_pose = self._build_release_pose(target_pose)
-        second_success, second_reason, second_steps, second_metrics = self._execute_motion(
-            controller=controller,
-            target_pose=release_pose,
-            target_marker_id=marker.marker_id,
-            max_control_steps=remaining_steps,
-            step_index_offset=first_steps,
-        )
-        total_steps = first_steps + second_steps
-        all_metrics = tuple(first_metrics + second_metrics)
-
-        if not second_success:
-            self._safe_release_and_detach()
-            return PickAndPlaceResult(
-                success=False,
-                reason=second_reason,
-                markers_detected=len(markers),
-                executed_steps=total_steps,
-                target_marker_id=marker.marker_id,
-                target_pose=target_pose,
-                step_metrics=all_metrics,
-            )
-
-        self._safe_release_and_detach()
-        return PickAndPlaceResult(
-            success=True,
-            reason="pick_and_place_executed",
+        return self._success_result(
+            termination_reason="trajectory_executed",
             markers_detected=len(markers),
-            executed_steps=total_steps,
+            executed_steps=executed_steps,
             target_marker_id=marker.marker_id,
+            target_pose=grasp_pose,
+            completed_phases=("detect_target", "approach_target"),
+            step_metrics=tuple(rows),
+            pick_success=False,
+            place_success=False,
+        )
+
+    def _execute_full_pick_and_place(
+        self,
+        *,
+        controller: JointControllerLike,
+        max_control_steps: int | None,
+    ) -> PickAndPlaceResult:
+        if self._gripper is None or self._tracked_object is None or self._place_pose is None:
+            return self._failure_result(
+                termination_reason="full_pick_and_place_not_configured",
+                markers_detected=0,
+                executed_steps=0,
+                target_marker_id=None,
+                target_pose=None,
+                completed_phases=(),
+                step_metrics=(),
+                pick_success=False,
+                place_success=False,
+            )
+
+        executed_steps = 0
+        remaining_steps = max_control_steps
+        step_metrics: list[dict[str, float | int | str | None]] = []
+        completed_phases: list[str] = []
+        pick_success = False
+        place_success = False
+        target_pose: Pose | None = None
+        target_marker_id: int | None = None
+        markers_detected = 0
+
+        success, reason, used_steps, rows = self._move_to_home(
+            controller=controller,
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+            phase_name="move_home_start",
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("move_home_start")
+
+        marker, markers = self._detect_target()
+        markers_detected = len(markers)
+        if marker is None:
+            return self._failure_result(
+                termination_reason="no_marker_detected_with_world_pose",
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("detect_target")
+
+        target_marker_id = marker.marker_id
+        target_pose = self._compute_grasp_pose(marker)
+        pre_grasp_pose = self._compute_offset_pose(target_pose, self._pre_grasp_offset)
+
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
+            target_pose=pre_grasp_pose,
+            target_marker_id=target_marker_id,
+            phase_name="move_pre_grasp",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("move_pre_grasp")
+
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
             target_pose=target_pose,
-            step_metrics=all_metrics,
+            target_marker_id=target_marker_id,
+            phase_name="move_grasp",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("move_grasp")
+
+        self._gripper.open()
+        if not self._grasp_object():
+            return self._failure_result(
+                termination_reason="grasp_failed",
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=False,
+                place_success=False,
+            )
+        completed_phases.append("grasp")
+
+        try:
+            self._tracked_object.attach_to_gripper()
+        except Exception:
+            self._safe_release_and_detach()
+            return self._failure_result(
+                termination_reason="attach_to_gripper_failed",
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=False,
+                place_success=False,
+            )
+        completed_phases.append("attach")
+        pick_success = True
+
+        lift_pose = self._compute_offset_pose(target_pose, self._lift_offset)
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
+            target_pose=lift_pose,
+            target_marker_id=target_marker_id,
+            phase_name="lift",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            self._safe_release_and_detach()
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=False,
+            )
+        completed_phases.append("lift")
+
+        pre_place_pose = self._compute_offset_pose(self._place_pose, self._pre_grasp_offset)
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
+            target_pose=pre_place_pose,
+            target_marker_id=target_marker_id,
+            phase_name="move_pre_place",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            self._safe_release_and_detach()
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=False,
+            )
+        completed_phases.append("move_pre_place")
+
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
+            target_pose=self._place_pose,
+            target_marker_id=target_marker_id,
+            phase_name="move_place",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            self._safe_release_and_detach()
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=False,
+            )
+        completed_phases.append("move_place")
+
+        self._release_object()
+        completed_phases.append("release")
+        try:
+            self._tracked_object.detach_from_gripper()
+        except Exception:
+            return self._failure_result(
+                termination_reason="detach_from_gripper_failed",
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=False,
+            )
+        completed_phases.append("detach")
+        place_success = True
+
+        retreat_pose = self._compute_offset_pose(self._place_pose, self._retreat_offset)
+        success, reason, used_steps, rows = self._move_to_pose(
+            controller=controller,
+            target_pose=retreat_pose,
+            target_marker_id=target_marker_id,
+            phase_name="retreat",
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        remaining_steps = self._remaining_steps(remaining_steps, used_steps)
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("retreat")
+
+        success, reason, used_steps, rows = self._move_to_home(
+            controller=controller,
+            max_control_steps=remaining_steps,
+            step_index_offset=executed_steps,
+            phase_name="move_home_end",
+        )
+        executed_steps += used_steps
+        step_metrics.extend(rows)
+        if not success:
+            return self._failure_result(
+                termination_reason=reason,
+                markers_detected=markers_detected,
+                executed_steps=executed_steps,
+                target_marker_id=target_marker_id,
+                target_pose=target_pose,
+                completed_phases=tuple(completed_phases),
+                step_metrics=tuple(step_metrics),
+                pick_success=pick_success,
+                place_success=place_success,
+            )
+        completed_phases.append("move_home_end")
+
+        return self._success_result(
+            termination_reason="pick_and_place_completed",
+            markers_detected=markers_detected,
+            executed_steps=executed_steps,
+            target_marker_id=target_marker_id,
+            target_pose=target_pose,
+            completed_phases=tuple(completed_phases),
+            step_metrics=tuple(step_metrics),
+            pick_success=pick_success,
+            place_success=place_success,
+        )
+
+    def _supports_full_pick_and_place(self) -> bool:
+        return (
+            self._gripper is not None
+            and self._tracked_object is not None
+            and self._place_pose is not None
+        )
+
+    def _move_to_home(
+        self,
+        *,
+        controller: JointControllerLike,
+        max_control_steps: int | None,
+        step_index_offset: int,
+        phase_name: str,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
+        current_state = self._robot.get_state()
+        if len(current_state.joints_positions) != len(_HOME_JOINTS_RAD):
+            return False, "home_joints_mismatch", 0, []
+        return self._move_to_joints(
+            controller=controller,
+            target_joints=_HOME_JOINTS_RAD,
+            target_marker_id=None,
+            phase_name=phase_name,
+            max_control_steps=max_control_steps,
+            step_index_offset=step_index_offset,
+        )
+
+    def _move_to_pose(
+        self,
+        *,
+        controller: JointControllerLike,
+        target_pose: Pose,
+        target_marker_id: int | None,
+        phase_name: str,
+        max_control_steps: int | None,
+        step_index_offset: int,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
+        return self._execute_motion(
+            controller=controller,
+            target_pose=target_pose,
+            target_marker_id=target_marker_id,
+            phase_name=phase_name,
+            max_control_steps=max_control_steps,
+            step_index_offset=step_index_offset,
+        )
+
+    def _move_to_joints(
+        self,
+        *,
+        controller: JointControllerLike,
+        target_joints: Sequence[float],
+        target_marker_id: int | None,
+        phase_name: str,
+        max_control_steps: int | None,
+        step_index_offset: int,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
+        return self._execute_joint_motion(
+            controller=controller,
+            target_joints=target_joints,
+            target_marker_id=target_marker_id,
+            phase_name=phase_name,
+            max_control_steps=max_control_steps,
+            step_index_offset=step_index_offset,
         )
 
     def _execute_motion(
@@ -266,7 +625,8 @@ class PickAndPlaceUseCase:
         *,
         controller: JointControllerLike,
         target_pose: Pose,
-        target_marker_id: int,
+        target_marker_id: int | None,
+        phase_name: str,
         max_control_steps: int | None,
         step_index_offset: int,
     ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
@@ -287,6 +647,58 @@ class PickAndPlaceUseCase:
             dt=self._control_dt_s,
         )
 
+        return self._execute_trajectory(
+            controller=controller,
+            trajectory=trajectory,
+            reference_xyz=target_pose.xyz,
+            target_marker_id=target_marker_id,
+            phase_name=phase_name,
+            max_control_steps=max_control_steps,
+            step_index_offset=step_index_offset,
+        )
+
+    def _execute_joint_motion(
+        self,
+        *,
+        controller: JointControllerLike,
+        target_joints: Sequence[float],
+        target_marker_id: int | None,
+        phase_name: str,
+        max_control_steps: int | None,
+        step_index_offset: int,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
+        state_at_start = self._robot.get_state()
+        target_joints_tuple = tuple(float(value) for value in target_joints)
+        if len(target_joints_tuple) != len(state_at_start.joints_positions):
+            return False, "home_joints_mismatch", 0, []
+
+        trajectory = self._trajectory_generator.generate(
+            q0=state_at_start.joints_positions,
+            qf=target_joints_tuple,
+            tf=self._trajectory_duration_s,
+            dt=self._control_dt_s,
+        )
+        return self._execute_trajectory(
+            controller=controller,
+            trajectory=trajectory,
+            reference_xyz=None,
+            target_marker_id=target_marker_id,
+            phase_name=phase_name,
+            max_control_steps=max_control_steps,
+            step_index_offset=step_index_offset,
+        )
+
+    def _execute_trajectory(
+        self,
+        *,
+        controller: JointControllerLike,
+        trajectory: TrajectoryLike,
+        reference_xyz: tuple[float, float, float] | None,
+        target_marker_id: int | None,
+        phase_name: str,
+        max_control_steps: int | None,
+        step_index_offset: int,
+    ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
         if self._visualization is not None:
             reference_path = tuple(
                 self._kinematics.forward_kinematics(joints_positions=q_ref)
@@ -315,7 +727,7 @@ class PickAndPlaceUseCase:
 
             control = controller.update(**kwargs)
             self._robot.command_joints_velocities(control.joints_velocities)
-            self._robot.step(reference_xyz=target_pose.xyz)
+            self._robot.step(reference_xyz=reference_xyz)
 
             if self._visualization is not None:
                 self._visualization.update_robot_state(state)
@@ -344,6 +756,7 @@ class PickAndPlaceUseCase:
                 {
                     "step_index": step_index,
                     "t_s": step_index * self._control_dt_s,
+                    "phase": phase_name,
                     "controller": self._controller_name(controller),
                     "target_marker_id": target_marker_id,
                     "q_error_l2": self._norm_l2(q_error),
@@ -361,38 +774,138 @@ class PickAndPlaceUseCase:
 
             executed_steps += 1
 
+        state_at_stop = self._robot.get_state()
         self._robot.command_joints_velocities(
-            tuple(0.0 for _ in state_at_start.joints_positions)
+            tuple(0.0 for _ in state_at_stop.joints_positions)
         )
-        self._robot.step(reference_xyz=target_pose.xyz)
+        self._robot.step(reference_xyz=reference_xyz)
 
         completed_trajectory = executed_steps == len(trajectory.joints_positions)
         if completed_trajectory:
             return True, "trajectory_executed", executed_steps, step_metrics
         return False, "max_control_steps_reached", executed_steps, step_metrics
 
-    def _build_release_pose(self, target_pose: Pose) -> Pose:
-        release_height_delta_m = max(0.05, self._target_height_offset_m)
+    def _grasp_object(self) -> bool:
+        if self._gripper is None:
+            return False
+        return bool(self._gripper.grasp())
+
+    def _release_object(self) -> None:
+        if self._gripper is None:
+            return
+        self._gripper.release()
+
+    def _detect_target(self) -> tuple[MarkerState | None, tuple[MarkerState, ...]]:
+        return self._detect_target_marker()
+
+    def _compute_grasp_pose(self, marker: MarkerState) -> Pose:
+        return self._build_target_pose(marker)
+
+    def _compute_offset_pose(
+        self,
+        base_pose: Pose,
+        offset_xyz: Sequence[float],
+    ) -> Pose:
+        offset = self._normalize_xyz_offset(offset_xyz, "offset_xyz")
         return Pose(
-            x=target_pose.x,
-            y=target_pose.y,
-            z=target_pose.z + release_height_delta_m,
-            roll=target_pose.roll,
-            pitch=target_pose.pitch,
-            yaw=target_pose.yaw,
+            x=base_pose.x + offset[0],
+            y=base_pose.y + offset[1],
+            z=base_pose.z + offset[2],
+            roll=base_pose.roll,
+            pitch=base_pose.pitch,
+            yaw=base_pose.yaw,
+        )
+
+    @staticmethod
+    def _remaining_steps(
+        max_control_steps: int | None,
+        used_steps: int,
+    ) -> int | None:
+        if max_control_steps is None:
+            return None
+        return max(0, int(max_control_steps) - int(used_steps))
+
+    @staticmethod
+    def _success_result(
+        *,
+        termination_reason: str,
+        markers_detected: int,
+        executed_steps: int,
+        target_marker_id: int | None,
+        target_pose: Pose | None,
+        completed_phases: tuple[str, ...],
+        step_metrics: tuple[dict[str, float | int | str | None], ...],
+        pick_success: bool,
+        place_success: bool,
+    ) -> PickAndPlaceResult:
+        return PickAndPlaceResult(
+            success=True,
+            reason=termination_reason,
+            markers_detected=markers_detected,
+            executed_steps=executed_steps,
+            target_marker_id=target_marker_id,
+            target_pose=target_pose,
+            pick_success=pick_success,
+            place_success=place_success,
+            termination_reason=termination_reason,
+            completed_phases=completed_phases,
+            step_metrics=step_metrics,
+        )
+
+    @staticmethod
+    def _failure_result(
+        *,
+        termination_reason: str,
+        markers_detected: int,
+        executed_steps: int,
+        target_marker_id: int | None,
+        target_pose: Pose | None,
+        completed_phases: tuple[str, ...],
+        step_metrics: tuple[dict[str, float | int | str | None], ...],
+        pick_success: bool,
+        place_success: bool,
+    ) -> PickAndPlaceResult:
+        return PickAndPlaceResult(
+            success=False,
+            reason=termination_reason,
+            markers_detected=markers_detected,
+            executed_steps=executed_steps,
+            target_marker_id=target_marker_id,
+            target_pose=target_pose,
+            pick_success=pick_success,
+            place_success=place_success,
+            termination_reason=termination_reason,
+            completed_phases=completed_phases,
+            step_metrics=step_metrics,
         )
 
     def _safe_release_and_detach(self) -> None:
-        if self._tracked_object is not None:
-            try:
-                self._tracked_object.detach_from_gripper()
-            except Exception:
-                pass
         if self._gripper is not None:
             try:
                 self._gripper.release()
             except Exception:
                 pass
+        if self._tracked_object is not None:
+            try:
+                self._tracked_object.detach_from_gripper()
+            except Exception:
+                pass
+
+    def _safe_stop_conveyor(self) -> None:
+        if self._conveyor is None:
+            return
+        try:
+            self._conveyor.stop()
+        except Exception:
+            pass
+
+    def _safe_start_conveyor(self) -> None:
+        if self._conveyor is None:
+            return
+        try:
+            self._conveyor.start()
+        except Exception:
+            pass
 
     def shutdown(self) -> None:
         stop_method = getattr(self._robot, "stop", None)
@@ -606,3 +1119,18 @@ class PickAndPlaceUseCase:
             if abs(float(tau_i) - float(tau_max_i)) <= epsilon:
                 count += 1
         return count
+
+    @staticmethod
+    def _normalize_xyz_offset(
+        values: Sequence[float],
+        values_name: str,
+    ) -> tuple[float, float, float]:
+        try:
+            offset = tuple(float(value) for value in values)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"`{values_name}` must contain numeric values."
+            ) from None
+        if len(offset) != 3:
+            raise ValueError(f"`{values_name}` must contain exactly 3 values.")
+        return (offset[0], offset[1], offset[2])

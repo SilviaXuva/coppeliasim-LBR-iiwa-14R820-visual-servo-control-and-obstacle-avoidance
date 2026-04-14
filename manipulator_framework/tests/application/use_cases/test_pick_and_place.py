@@ -36,6 +36,26 @@ class _FakeTrajectoryGenerator:
         return self.trajectory
 
 
+class _FakeAdaptiveTrajectoryGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(
+        self,
+        q0: tuple[float, ...],
+        qf: tuple[float, ...],
+        tf: float,
+        dt: float,
+    ) -> _Trajectory:
+        del tf, dt
+        self.calls += 1
+        zeros = tuple(0.0 for _ in q0)
+        return _Trajectory(
+            joints_positions=(tuple(float(value) for value in qf),),
+            joints_velocities=(zeros,),
+        )
+
+
 class _FakeController:
     def __init__(self) -> None:
         self.calls = 0
@@ -137,10 +157,18 @@ class _FakeKinematics:
         return Pose(x=sum(joints_positions), y=0.0, z=0.0)
 
     def inverse_kinematics(self, target_pose: Pose, seed_joints_positions=None):
-        del seed_joints_positions
+        if seed_joints_positions is None:
+            joints = [0.0, 0.0, 0.0]
+        else:
+            joints = [float(value) for value in seed_joints_positions]
+            if len(joints) < 3:
+                joints.extend([0.0 for _ in range(3 - len(joints))])
+        joints[0] = target_pose.x
+        joints[1] = target_pose.y
+        joints[2] = target_pose.z
         if self._fail_inverse:
             raise RuntimeError("ik failed")
-        return (target_pose.x, target_pose.y, target_pose.z)
+        return tuple(joints)
 
     def jacobian(self, joints_positions):
         del joints_positions
@@ -206,6 +234,26 @@ class _FakeTrackedObject:
 
     def detach_from_gripper(self) -> None:
         self.calls.append("detach_from_gripper")
+
+
+class _FakeConveyor:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.speed = 0.0
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+
+    def set_speed(self, speed: float) -> None:
+        self.calls.append("set_speed")
+        self.speed = float(speed)
+
+    def get_speed(self) -> float:
+        self.calls.append("get_speed")
+        return self.speed
 
 
 class _FakeVisualization:
@@ -419,18 +467,24 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
         self.assertEqual(len(robot.velocity_commands), 4)
 
     def test_run_once_with_gripper_and_object_ports(self) -> None:
-        robot = _FakeRobot(joints_count=3)
+        robot = _FakeRobot(joints_count=7)
         gripper = _FakeGripper(grasp_result=True)
         tracked_object = _FakeTrackedObject()
+        generator = _FakeAdaptiveTrajectoryGenerator()
+        place_pose = Pose(0.45, -0.10, 0.20, roll=math.pi, pitch=0.0, yaw=0.0)
         use_case = PickAndPlaceUseCase(
             robot=robot,
             camera=_FakeCamera(),
             perception=_FakePerception((self.marker,)),
             kinematics=_FakeKinematics(),
-            trajectory_generator=_FakeTrajectoryGenerator(self.trajectory),
+            trajectory_generator=generator,
             controller=_FakeController(),
             gripper=gripper,
             tracked_object=tracked_object,
+            place_pose=place_pose,
+            pre_grasp_offset=(0.0, 0.0, 0.10),
+            lift_offset=(0.0, 0.0, 0.20),
+            retreat_offset=(0.0, 0.0, 0.08),
             trajectory_duration_s=1.0,
             control_dt_s=0.1,
         )
@@ -438,15 +492,112 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
         result = use_case.run_once()
 
         self.assertTrue(result.success)
-        self.assertEqual(result.reason, "pick_and_place_executed")
-        self.assertEqual(result.executed_steps, 6)
+        self.assertTrue(result.pick_success)
+        self.assertTrue(result.place_success)
+        self.assertEqual(result.reason, "pick_and_place_completed")
+        self.assertEqual(result.termination_reason, "pick_and_place_completed")
+        self.assertEqual(result.executed_steps, 8)
         self.assertEqual(gripper.calls, ["open", "grasp", "release"])
         self.assertEqual(
             tracked_object.calls,
             ["attach_to_gripper", "detach_from_gripper"],
         )
-        self.assertEqual(len(robot.velocity_commands), 8)  # 2x (3 control + stop)
-        self.assertEqual(len(result.step_metrics), 6)
+        self.assertEqual(len(result.step_metrics), 8)
+        self.assertEqual(
+            result.completed_phases,
+            (
+                "move_home_start",
+                "detect_target",
+                "move_pre_grasp",
+                "move_grasp",
+                "grasp",
+                "attach",
+                "lift",
+                "move_pre_place",
+                "move_place",
+                "release",
+                "detach",
+                "retreat",
+                "move_home_end",
+            ),
+        )
+        self.assertEqual(generator.calls, 8)
+
+    def test_run_once_full_flow_fails_when_target_not_detected(self) -> None:
+        robot = _FakeRobot(joints_count=7)
+        gripper = _FakeGripper(grasp_result=True)
+        tracked_object = _FakeTrackedObject()
+        use_case = PickAndPlaceUseCase(
+            robot=robot,
+            camera=_FakeCamera(),
+            perception=_FakePerception(()),
+            kinematics=_FakeKinematics(),
+            trajectory_generator=_FakeAdaptiveTrajectoryGenerator(),
+            controller=_FakeController(),
+            gripper=gripper,
+            tracked_object=tracked_object,
+            place_pose=Pose(0.45, -0.10, 0.20, roll=math.pi, pitch=0.0, yaw=0.0),
+            trajectory_duration_s=1.0,
+            control_dt_s=0.1,
+        )
+
+        result = use_case.run_once()
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.termination_reason, "no_marker_detected_with_world_pose")
+        self.assertEqual(result.completed_phases, ("move_home_start",))
+        self.assertFalse(result.pick_success)
+        self.assertFalse(result.place_success)
+
+    def test_run_once_full_flow_fails_on_grasp(self) -> None:
+        robot = _FakeRobot(joints_count=7)
+        gripper = _FakeGripper(grasp_result=False)
+        tracked_object = _FakeTrackedObject()
+        use_case = PickAndPlaceUseCase(
+            robot=robot,
+            camera=_FakeCamera(),
+            perception=_FakePerception((self.marker,)),
+            kinematics=_FakeKinematics(),
+            trajectory_generator=_FakeAdaptiveTrajectoryGenerator(),
+            controller=_FakeController(),
+            gripper=gripper,
+            tracked_object=tracked_object,
+            place_pose=Pose(0.45, -0.10, 0.20, roll=math.pi, pitch=0.0, yaw=0.0),
+            trajectory_duration_s=1.0,
+            control_dt_s=0.1,
+        )
+
+        result = use_case.run_once()
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.termination_reason, "grasp_failed")
+        self.assertEqual(
+            result.completed_phases,
+            ("move_home_start", "detect_target", "move_pre_grasp", "move_grasp"),
+        )
+        self.assertFalse(result.pick_success)
+        self.assertFalse(result.place_success)
+
+    def test_run_once_controls_conveyor_through_port(self) -> None:
+        robot = _FakeRobot(joints_count=3)
+        conveyor = _FakeConveyor()
+        use_case = PickAndPlaceUseCase(
+            robot=robot,
+            camera=_FakeCamera(),
+            perception=_FakePerception((self.marker,)),
+            kinematics=_FakeKinematics(),
+            trajectory_generator=_FakeTrajectoryGenerator(self.trajectory),
+            controller=_FakeController(),
+            conveyor=conveyor,
+            trajectory_duration_s=1.0,
+            control_dt_s=0.1,
+        )
+
+        result = use_case.run_once()
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.reason, "trajectory_executed")
+        self.assertEqual(conveyor.calls, ["stop", "start"])
 
 
 

@@ -16,6 +16,7 @@ from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.models.robot_state import RobotState
 from ...core.ports.camera_port import CameraPort
+from ...core.ports.conveyor_port import ConveyorPort
 from ...core.ports.dynamics_port import DynamicsPort
 from ...core.ports.kinematics_port import KinematicsPort
 from ...core.ports.perception_port import PerceptionPort
@@ -41,6 +42,7 @@ class PickAndPlaceWiring:
     kinematics: KinematicsPort
     dynamics: DynamicsPort | None = None
     visualization: VisualizationPort | None = None
+    conveyor: ConveyorPort | None = None
 
 @dataclass(slots=True, frozen=True)
 class ExperimentExecution:
@@ -84,6 +86,12 @@ class ExperimentRunner:
             kwargs["kv"] = config.pick_and_place.kv
             kwargs["joints_torques_min"] = config.pick_and_place.tau_min
             kwargs["joints_torques_max"] = config.pick_and_place.tau_max
+            kwargs["place_pose"] = cls._pose_from_config(
+                config.pick_and_place.place_pose
+            )
+            kwargs["pre_grasp_offset"] = config.pick_and_place.pre_grasp_offset
+            kwargs["lift_offset"] = config.pick_and_place.lift_offset
+            kwargs["retreat_offset"] = config.pick_and_place.retreat_offset
 
         initial_state = wiring.robot.get_state()
         use_case = PickAndPlaceUseCase(
@@ -93,6 +101,7 @@ class ExperimentRunner:
             kinematics=wiring.kinematics,
             dynamics=wiring.dynamics,
             visualization=wiring.visualization,
+            conveyor=wiring.conveyor,
             trajectory_generator=QuinticJointTrajectory(),
             trajectory_duration_s=trajectory_duration_s,
             control_dt_s=control_dt_s,
@@ -142,6 +151,7 @@ class ExperimentRunner:
             kinematics=wiring.kinematics,
             dynamics=wiring.dynamics,
             visualization=wiring.visualization,
+            conveyor=wiring.conveyor,
             trajectory_generator=QuinticJointTrajectory(),
             controller=controller,
             kp=config.pick_and_place.kp,
@@ -152,6 +162,10 @@ class ExperimentRunner:
             trajectory_duration_s=config.pick_and_place.trajectory_duration_s,
             control_dt_s=config.pick_and_place.control_dt_s,
             target_height_offset_m=config.pick_and_place.target_height_offset_m,
+            place_pose=cls._pose_from_config(config.pick_and_place.place_pose),
+            pre_grasp_offset=config.pick_and_place.pre_grasp_offset,
+            lift_offset=config.pick_and_place.lift_offset,
+            retreat_offset=config.pick_and_place.retreat_offset,
         )
         return cls(
             use_case=use_case,
@@ -666,6 +680,19 @@ class ExperimentRunner:
         return tuple(rows)
 
     @staticmethod
+    def _pose_from_config(values: Sequence[float]) -> Pose:
+        if len(values) != 6:
+            raise ValueError("`place_pose` must contain 6 values (x, y, z, roll, pitch, yaw).")
+        return Pose(
+            x=float(values[0]),
+            y=float(values[1]),
+            z=float(values[2]),
+            roll=float(values[3]),
+            pitch=float(values[4]),
+            yaw=float(values[5]),
+        )
+
+    @staticmethod
     def _shutdown_use_case(use_case: object) -> None:
         shutdown_method = getattr(use_case, "shutdown", None)
         if callable(shutdown_method):
@@ -700,6 +727,7 @@ class ExperimentRunner:
             kinematics=kinematics,
             dynamics=dynamics,
             visualization=visualization,
+            conveyor=None,
         )
 
     @classmethod
@@ -750,6 +778,7 @@ class ExperimentRunner:
             kinematics=kinematics,
             dynamics=dynamics,
             visualization=visualization,
+            conveyor=None,
         )
 
 

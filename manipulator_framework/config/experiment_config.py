@@ -71,6 +71,29 @@ _DEFAULT_PICK_AND_PLACE_TAU_MAX = (
     38.00,
     38.00,
 )
+_DEFAULT_PICK_AND_PLACE_PLACE_POSE = (
+    0.55,
+    0.0,
+    0.20,
+    3.141592653589793,
+    0.0,
+    0.0,
+)
+_DEFAULT_PICK_AND_PLACE_PRE_GRASP_OFFSET = (
+    0.0,
+    0.0,
+    0.10,
+)
+_DEFAULT_PICK_AND_PLACE_LIFT_OFFSET = (
+    0.0,
+    0.0,
+    0.15,
+)
+_DEFAULT_PICK_AND_PLACE_RETREAT_OFFSET = (
+    0.0,
+    0.0,
+    0.10,
+)
 
 GainConfig = float | tuple[float, ...]
 
@@ -151,6 +174,19 @@ def _parse_vector(value: Any, values_name: str) -> tuple[float, ...]:
         ) from None
 
 
+def _parse_vector_with_size(
+    value: Any,
+    values_name: str,
+    expected_size: int,
+) -> tuple[float, ...]:
+    parsed = _parse_vector(value, values_name)
+    if len(parsed) != expected_size:
+        raise ValueError(
+            f"`{values_name}` must have {expected_size} values."
+        )
+    return parsed
+
+
 def _normalize_experiment_name(experiment: str) -> str:
     normalized = {"pick_and_place": _EXPERIMENT_PICK_AND_PLACE_KIN_PI}.get(experiment, experiment)
     if normalized not in _SUPPORTED_EXPERIMENTS:
@@ -181,6 +217,10 @@ class PickAndPlaceConfig:
     trajectory_duration_s: float = 1.5
     control_dt_s: float = 0.05
     target_height_offset_m: float = 0.15
+    place_pose: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_PLACE_POSE
+    pre_grasp_offset: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_PRE_GRASP_OFFSET
+    lift_offset: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_LIFT_OFFSET
+    retreat_offset: tuple[float, ...] = _DEFAULT_PICK_AND_PLACE_RETREAT_OFFSET
     marker_length_m: float = 0.05
     aruco_dictionary: str = "DICT_6X6_250"
 
@@ -330,6 +370,29 @@ def _experiment_config_from_dict(
             trajectory_duration_s=float(pick_data.get("trajectory_duration_s", 2.0)),
             control_dt_s=float(pick_data.get("control_dt_s", 0.05)),
             target_height_offset_m=float(pick_data.get("target_height_offset_m", 0.0)),
+            place_pose=_parse_vector_with_size(
+                pick_data.get("place_pose", _DEFAULT_PICK_AND_PLACE_PLACE_POSE),
+                "place_pose",
+                6,
+            ),
+            pre_grasp_offset=_parse_vector_with_size(
+                pick_data.get(
+                    "pre_grasp_offset",
+                    _DEFAULT_PICK_AND_PLACE_PRE_GRASP_OFFSET,
+                ),
+                "pre_grasp_offset",
+                3,
+            ),
+            lift_offset=_parse_vector_with_size(
+                pick_data.get("lift_offset", _DEFAULT_PICK_AND_PLACE_LIFT_OFFSET),
+                "lift_offset",
+                3,
+            ),
+            retreat_offset=_parse_vector_with_size(
+                pick_data.get("retreat_offset", _DEFAULT_PICK_AND_PLACE_RETREAT_OFFSET),
+                "retreat_offset",
+                3,
+            ),
             marker_length_m=float(pick_data.get("marker_length_m", 0.05)),
             aruco_dictionary=str(pick_data.get("aruco_dictionary", "DICT_6X6_250")),
         ),

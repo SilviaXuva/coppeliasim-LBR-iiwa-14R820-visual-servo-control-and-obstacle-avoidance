@@ -64,6 +64,32 @@ class TestExperimentConfigEnvOverride(unittest.TestCase):
         self.assertEqual(config.pick_and_place.kp, (1.0, 2.0, 3.0))
         self.assertEqual(config.pick_and_place.ki, (0.1, 0.2, 0.3))
 
+    def test_pick_and_place_place_and_offsets_loaded_from_json(self) -> None:
+        fake_config_path = "manipulator_framework/tests/config/fake_experiment.json"
+        fake_json_payload = json.dumps(
+            {
+                "pick_and_place": {
+                    "place_pose": [0.4, -0.1, 0.3, 3.14, 0.0, 1.57],
+                    "pre_grasp_offset": [0.0, 0.0, 0.12],
+                    "lift_offset": [0.0, 0.0, 0.2],
+                    "retreat_offset": [0.0, 0.0, 0.08],
+                }
+            }
+        )
+        with patch("pathlib.Path.read_text", return_value=fake_json_payload):
+            config = load_experiment_config(
+                "pick_and_place_kin_pi",
+                config_path=fake_config_path,
+            )
+
+        self.assertEqual(
+            config.pick_and_place.place_pose,
+            (0.4, -0.1, 0.3, 3.14, 0.0, 1.57),
+        )
+        self.assertEqual(config.pick_and_place.pre_grasp_offset, (0.0, 0.0, 0.12))
+        self.assertEqual(config.pick_and_place.lift_offset, (0.0, 0.0, 0.2))
+        self.assertEqual(config.pick_and_place.retreat_offset, (0.0, 0.0, 0.08))
+
     def test_camera_frame_rotation_matches_legacy_yaw_180(self) -> None:
         config = load_experiment_config("pick_and_place_kin_pi")
         self.assertEqual(
