@@ -2,6 +2,7 @@ import unittest
 from dataclasses import dataclass
 import math
 
+from manipulator_framework.infrastructure.logging import LoggingConfig, setup_logging
 from manipulator_framework.application.use_cases.pick_and_place import PickAndPlaceUseCase
 from manipulator_framework.core.models.marker_state import MarkerState
 from manipulator_framework.core.models.pose import Pose
@@ -285,6 +286,13 @@ class _FakeVisualization:
 
 class TestPickAndPlaceUseCase(unittest.TestCase):
     def setUp(self) -> None:
+        setup_logging(
+            LoggingConfig(
+                level="INFO",
+                log_to_console=False,
+                log_to_file=False,
+            )
+        )
         self.marker = MarkerState(marker_id=1, pose_world=Pose(0.3, 0.1, 0.2))
         self.trajectory = _Trajectory(
             joints_positions=((0.0, 0.0, 0.0), (0.1, 0.1, 0.1), (0.2, 0.1, 0.3)),
@@ -331,17 +339,25 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
             camera=_FakeCamera(),
             perception=_FakePerception(()),
             kinematics=_FakeKinematics(),
+            controller=_FakeController(),
             trajectory_duration_s=1.0,
             control_dt_s=0.1,
         )
 
-        result = use_case.run_once()
+        with self.assertLogs(
+            "manipulator_framework.application.use_cases.pick_and_place",
+            level="INFO",
+        ) as captured:
+            result = use_case.run_once()
 
         self.assertFalse(result.success)
         self.assertEqual(result.reason, "no_marker_detected_with_world_pose")
         self.assertEqual(result.executed_steps, 0)
         self.assertEqual(robot.velocity_commands, [])
         self.assertEqual(len(robot.step_calls), 1)
+        log_output = "\n".join(captured.output)
+        self.assertIn("Target detection started", log_output)
+        self.assertIn("Target detection failed", log_output)
 
     def test_run_once_returns_inverse_kinematics_failure(self) -> None:
         robot = _FakeRobot()
@@ -489,7 +505,11 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
             control_dt_s=0.1,
         )
 
-        result = use_case.run_once()
+        with self.assertLogs(
+            "manipulator_framework.application.use_cases.pick_and_place",
+            level="INFO",
+        ) as captured:
+            result = use_case.run_once()
 
         self.assertTrue(result.success)
         self.assertTrue(result.pick_success)
@@ -522,6 +542,16 @@ class TestPickAndPlaceUseCase(unittest.TestCase):
             ),
         )
         self.assertEqual(generator.calls, 8)
+        log_output = "\n".join(captured.output)
+        self.assertIn("Moving to home started", log_output)
+        self.assertIn("Pre-grasp started", log_output)
+        self.assertIn("Grasp started", log_output)
+        self.assertIn("Attach completed", log_output)
+        self.assertIn("Lift started", log_output)
+        self.assertIn("Place started", log_output)
+        self.assertIn("Release completed", log_output)
+        self.assertIn("Retreat started", log_output)
+        self.assertIn("Pick-and-place completed", log_output)
 
     def test_run_once_full_flow_fails_when_target_not_detected(self) -> None:
         robot = _FakeRobot(joints_count=7)

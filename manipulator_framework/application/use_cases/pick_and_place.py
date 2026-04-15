@@ -5,9 +5,7 @@ from dataclasses import dataclass
 import math
 from numbers import Real
 from typing import Callable, Protocol
-import numpy as np
 
-from ...core.controllers.kinematic.joint_pi import JointPIController
 from ...core.models.marker_state import MarkerState
 from ...core.models.pose import Pose
 from ...core.ports.camera_port import CameraPort
@@ -20,7 +18,7 @@ from ...core.ports.perception_port import PerceptionPort
 from ...core.ports.robot_port import RobotPort
 from ...core.ports.visualization_port import VisualizationPort
 from ...core.trajectory.quintic_trajectory import QuinticJointTrajectory
-from ...core.controllers.dynamic.joint_pd import JointPDController
+from ...infrastructure.logging import get_logger
 
 
 @dataclass(slots=True, frozen=True)
@@ -69,9 +67,10 @@ class JointControllerLike(Protocol):
 
 GainValue = Real | Sequence[float] | Sequence[Sequence[float]]
 _HOME_JOINTS_RAD = tuple(
-    float(value)
-    for value in np.deg2rad([0.0, 0.0, 0.0, 90.0, 0.0, -90.0, 90.0])
+    math.radians(value)
+    for value in (0.0, 0.0, 0.0, 90.0, 0.0, -90.0, 90.0)
 )
+_LOGGER = get_logger(__name__)
 
 
 class PickAndPlaceUseCase:
@@ -167,6 +166,11 @@ class PickAndPlaceUseCase:
         return self.execute(max_control_steps=max_control_steps)
 
     def execute(self, max_control_steps: int | None = None) -> PickAndPlaceResult:
+        _LOGGER.info(
+            "Pick-and-place execution started: full_flow=%s max_control_steps=%s",
+            self._supports_full_pick_and_place(),
+            max_control_steps,
+        )
         self._safe_stop_conveyor()
         try:
             current_state = self._robot.get_state()
@@ -193,8 +197,10 @@ class PickAndPlaceUseCase:
         controller: JointControllerLike,
         max_control_steps: int | None,
     ) -> PickAndPlaceResult:
+        _LOGGER.info("Target detection started.")
         marker, markers = self._detect_target()
         if marker is None:
+            _LOGGER.warning("Target detection failed: no marker with world pose.")
             return self._failure_result(
                 termination_reason="no_marker_detected_with_world_pose",
                 markers_detected=len(markers),
@@ -208,6 +214,11 @@ class PickAndPlaceUseCase:
             )
 
         grasp_pose = self._compute_grasp_pose(marker)
+        _LOGGER.info(
+            "Target detection succeeded: markers_detected=%s target_marker_id=%s",
+            len(markers),
+            marker.marker_id,
+        )
         success, reason, executed_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=grasp_pose,
@@ -217,6 +228,12 @@ class PickAndPlaceUseCase:
             step_index_offset=0,
         )
         if not success:
+            _LOGGER.warning(
+                "Approach target failed: reason=%s executed_steps=%s target_marker_id=%s",
+                reason,
+                executed_steps,
+                marker.marker_id,
+            )
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=len(markers),
@@ -229,6 +246,11 @@ class PickAndPlaceUseCase:
                 place_success=False,
             )
 
+        _LOGGER.info(
+            "Approach target finished: executed_steps=%s target_marker_id=%s",
+            executed_steps,
+            marker.marker_id,
+        )
         return self._success_result(
             termination_reason="trajectory_executed",
             markers_detected=len(markers),
@@ -270,6 +292,7 @@ class PickAndPlaceUseCase:
         target_marker_id: int | None = None
         markers_detected = 0
 
+        self._log_phase_started("moving to home")
         success, reason, used_steps, rows = self._move_to_home(
             controller=controller,
             max_control_steps=remaining_steps,
@@ -280,6 +303,7 @@ class PickAndPlaceUseCase:
         step_metrics.extend(rows)
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
+            self._log_phase_failed("moving to home", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -293,9 +317,11 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("move_home_start")
 
+        _LOGGER.info("Target detection started.")
         marker, markers = self._detect_target()
         markers_detected = len(markers)
         if marker is None:
+            _LOGGER.warning("Target detection failed: no marker with world pose.")
             return self._failure_result(
                 termination_reason="no_marker_detected_with_world_pose",
                 markers_detected=markers_detected,
@@ -308,11 +334,17 @@ class PickAndPlaceUseCase:
                 place_success=place_success,
             )
         completed_phases.append("detect_target")
+        _LOGGER.info(
+            "Target detection succeeded: markers_detected=%s target_marker_id=%s",
+            markers_detected,
+            marker.marker_id,
+        )
 
         target_marker_id = marker.marker_id
         target_pose = self._compute_grasp_pose(marker)
         pre_grasp_pose = self._compute_offset_pose(target_pose, self._pre_grasp_offset)
 
+        self._log_phase_started("pre-grasp")
         success, reason, used_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=pre_grasp_pose,
@@ -325,6 +357,7 @@ class PickAndPlaceUseCase:
         step_metrics.extend(rows)
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
+            self._log_phase_failed("pre-grasp", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -338,6 +371,7 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("move_pre_grasp")
 
+        self._log_phase_started("grasp approach")
         success, reason, used_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=target_pose,
@@ -350,6 +384,7 @@ class PickAndPlaceUseCase:
         step_metrics.extend(rows)
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
+            self._log_phase_failed("grasp approach", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -363,8 +398,10 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("move_grasp")
 
+        self._log_phase_started("grasp")
         self._gripper.open()
         if not self._grasp_object():
+            self._log_phase_failed("grasp", "grasp_failed", executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason="grasp_failed",
                 markers_detected=markers_detected,
@@ -377,11 +414,19 @@ class PickAndPlaceUseCase:
                 place_success=False,
             )
         completed_phases.append("grasp")
+        _LOGGER.info("Grasp completed: target_marker_id=%s", target_marker_id)
 
+        self._log_phase_started("attach")
         try:
             self._tracked_object.attach_to_gripper()
         except Exception:
             self._safe_release_and_detach()
+            self._log_phase_failed(
+                "attach",
+                "attach_to_gripper_failed",
+                executed_steps,
+                target_marker_id,
+            )
             return self._failure_result(
                 termination_reason="attach_to_gripper_failed",
                 markers_detected=markers_detected,
@@ -395,8 +440,10 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("attach")
         pick_success = True
+        _LOGGER.info("Attach completed: target_marker_id=%s", target_marker_id)
 
         lift_pose = self._compute_offset_pose(target_pose, self._lift_offset)
+        self._log_phase_started("lift")
         success, reason, used_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=lift_pose,
@@ -410,6 +457,7 @@ class PickAndPlaceUseCase:
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
             self._safe_release_and_detach()
+            self._log_phase_failed("lift", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -424,6 +472,7 @@ class PickAndPlaceUseCase:
         completed_phases.append("lift")
 
         pre_place_pose = self._compute_offset_pose(self._place_pose, self._pre_grasp_offset)
+        self._log_phase_started("place")
         success, reason, used_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=pre_place_pose,
@@ -437,6 +486,7 @@ class PickAndPlaceUseCase:
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
             self._safe_release_and_detach()
+            self._log_phase_failed("place", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -463,6 +513,7 @@ class PickAndPlaceUseCase:
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
             self._safe_release_and_detach()
+            self._log_phase_failed("place", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -476,11 +527,18 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("move_place")
 
+        self._log_phase_started("release")
         self._release_object()
         completed_phases.append("release")
         try:
             self._tracked_object.detach_from_gripper()
         except Exception:
+            self._log_phase_failed(
+                "release",
+                "detach_from_gripper_failed",
+                executed_steps,
+                target_marker_id,
+            )
             return self._failure_result(
                 termination_reason="detach_from_gripper_failed",
                 markers_detected=markers_detected,
@@ -494,8 +552,10 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("detach")
         place_success = True
+        _LOGGER.info("Release completed: target_marker_id=%s", target_marker_id)
 
         retreat_pose = self._compute_offset_pose(self._place_pose, self._retreat_offset)
+        self._log_phase_started("retreat")
         success, reason, used_steps, rows = self._move_to_pose(
             controller=controller,
             target_pose=retreat_pose,
@@ -508,6 +568,7 @@ class PickAndPlaceUseCase:
         step_metrics.extend(rows)
         remaining_steps = self._remaining_steps(remaining_steps, used_steps)
         if not success:
+            self._log_phase_failed("retreat", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -521,6 +582,7 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("retreat")
 
+        self._log_phase_started("moving to home")
         success, reason, used_steps, rows = self._move_to_home(
             controller=controller,
             max_control_steps=remaining_steps,
@@ -530,6 +592,7 @@ class PickAndPlaceUseCase:
         executed_steps += used_steps
         step_metrics.extend(rows)
         if not success:
+            self._log_phase_failed("moving to home", reason, executed_steps, target_marker_id)
             return self._failure_result(
                 termination_reason=reason,
                 markers_detected=markers_detected,
@@ -543,6 +606,11 @@ class PickAndPlaceUseCase:
             )
         completed_phases.append("move_home_end")
 
+        _LOGGER.info(
+            "Pick-and-place completed: executed_steps=%s target_marker_id=%s",
+            executed_steps,
+            target_marker_id,
+        )
         return self._success_result(
             termination_reason="pick_and_place_completed",
             markers_detected=markers_detected,
@@ -572,6 +640,7 @@ class PickAndPlaceUseCase:
     ) -> tuple[bool, str, int, list[dict[str, float | int | str | None]]]:
         current_state = self._robot.get_state()
         if len(current_state.joints_positions) != len(_HOME_JOINTS_RAD):
+            _LOGGER.warning("Moving to home failed: home joints mismatch.")
             return False, "home_joints_mismatch", 0, []
         return self._move_to_joints(
             controller=controller,
@@ -637,6 +706,11 @@ class PickAndPlaceUseCase:
                 seed_joints_positions=state_at_start.joints_positions,
             )
         except Exception:
+            _LOGGER.warning(
+                "Motion planning failed: inverse kinematics failed for phase=%s target_marker_id=%s",
+                phase_name,
+                target_marker_id,
+            )
             self._robot.step(reference_xyz=target_pose.xyz)
             return False, "inverse_kinematics_failed", 0, []
 
@@ -722,7 +796,7 @@ class PickAndPlaceUseCase:
                 "joints_velocities_ref": dq_ref,
                 "dt": self._control_dt_s,
             }
-            if isinstance(controller, JointPDController):
+            if self._controller_requires_joints_velocities(controller):
                 kwargs["joints_velocities"] = state.joints_velocities
 
             control = controller.update(**kwargs)
@@ -783,7 +857,31 @@ class PickAndPlaceUseCase:
         completed_trajectory = executed_steps == len(trajectory.joints_positions)
         if completed_trajectory:
             return True, "trajectory_executed", executed_steps, step_metrics
+        _LOGGER.warning(
+            "Trajectory interrupted: phase=%s reason=max_control_steps_reached executed_steps=%s",
+            phase_name,
+            executed_steps,
+        )
         return False, "max_control_steps_reached", executed_steps, step_metrics
+
+    @staticmethod
+    def _log_phase_started(phase_name: str) -> None:
+        _LOGGER.info("%s started.", phase_name.capitalize())
+
+    @staticmethod
+    def _log_phase_failed(
+        phase_name: str,
+        reason: str,
+        executed_steps: int,
+        target_marker_id: int | None,
+    ) -> None:
+        _LOGGER.warning(
+            "%s failed: reason=%s executed_steps=%s target_marker_id=%s",
+            phase_name.capitalize(),
+            reason,
+            executed_steps,
+            target_marker_id,
+        )
 
     def _grasp_object(self) -> bool:
         if self._gripper is None:
@@ -947,12 +1045,16 @@ class PickAndPlaceUseCase:
         strategy = self._controller_strategy or "kinematic_pi"
 
         if strategy == "kinematic_pi":
+            from ...core.controllers.kinematic.joint_pi import JointPIController
+
             self._controller = JointPIController(
                 kp=self._kp,
                 ki=self._ki,
                 joints_count=joints_count,
             )
         elif strategy == "dynamic_pd":
+            from ...core.controllers.dynamic.joint_pd import JointPDController
+
             if self._dynamics is None:
                 raise ValueError("`dynamics` must be provided when using dynamic PD controller.")
             if self._joints_torques_min is None or self._joints_torques_max is None:
@@ -1071,11 +1173,15 @@ class PickAndPlaceUseCase:
 
     @staticmethod
     def _controller_name(controller: JointControllerLike) -> str:
-        if isinstance(controller, JointPDController):
+        if controller.__class__.__name__ == "JointPDController":
             return "dynamic_pd"
-        if isinstance(controller, JointPIController):
+        if controller.__class__.__name__ == "JointPIController":
             return "kinematic_pi"
         return controller.__class__.__name__.lower()
+
+    @staticmethod
+    def _controller_requires_joints_velocities(controller: JointControllerLike) -> bool:
+        return controller.__class__.__name__ == "JointPDController"
 
     @staticmethod
     def _extract_numeric_tuple(values: object) -> tuple[float, ...] | None:

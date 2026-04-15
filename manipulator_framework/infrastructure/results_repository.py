@@ -32,6 +32,15 @@ class ResultsRepository:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
+    def prepare_run_dir(
+        self,
+        experiment: str,
+        run_id: str,
+    ) -> Path:
+        run_dir = self._base_dir / experiment / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
     def save_experiment_results(
         self,
         experiment: str,
@@ -50,8 +59,7 @@ class ResultsRepository:
         # Kept for API compatibility. The v1 artifact schema always persists 5 files.
         del save_json, save_csv
         resolved_run_id = run_id or uuid4().hex[:12]
-        run_dir = self._base_dir / experiment / resolved_run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = self.prepare_run_dir(experiment, resolved_run_id)
 
         artifacts: dict[str, str] = {"run_dir": str(run_dir)}
 

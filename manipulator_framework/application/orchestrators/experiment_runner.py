@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from numbers import Real
 import platform
+from pathlib import Path
 import random
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from ...core.ports.robot_port import RobotPort
 from ...core.ports.visualization_port import VisualizationPort
 from ...core.trajectory.quintic_trajectory import QuinticJointTrajectory
 from ...config.experiment_config import ExperimentConfig
+from ...infrastructure.logging import LoggingConfig, get_logger, setup_logging
 from ...infrastructure.results_repository import ResultsRepository
 from ..use_cases.pick_and_place import PickAndPlaceResult, PickAndPlaceUseCase
 
@@ -33,6 +35,8 @@ _EXPERIMENT_PICK_AND_PLACE_KIN_PI = "pick_and_place_kin_pi"
 _EXPERIMENT_PICK_AND_PLACE_DYN_PD = "pick_and_place_dyn_pd"
 _ARTIFACT_SCHEMA_VERSION = "1.0"
 _CONVERGENCE_EPSILON_L2 = 0.02
+_LOG_FILE_NAME = "operational.log"
+_LOGGER = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -203,8 +207,28 @@ class ExperimentRunner:
             if self._config.experiment == _EXPERIMENT_PICK_AND_PLACE_DYN_PD
             else "kinematic_pi"
         )
-
         started_at = datetime.now(timezone.utc)
+        run_id = f"{started_at.strftime('%Y%m%dT%H%M%S')}_{uuid4().hex[:8]}"
+        run_dir = self._prepare_run_dir(
+            experiment=self._config.experiment,
+            run_id=run_id,
+        )
+        self._setup_operational_logging(run_dir=run_dir)
+        _LOGGER.info(
+            "Experiment started: experiment=%s run_id=%s backend=%s controller=%s cycles=%s",
+            self._config.experiment,
+            run_id,
+            self._config.runtime.backend,
+            controller_name,
+            self._config.runtime.cycles,
+        )
+        _LOGGER.info(
+            "Main config loaded: random_seed=%s max_control_steps_per_cycle=%s stop_on_success=%s",
+            self._config.runtime.random_seed,
+            self._config.runtime.max_control_steps_per_cycle,
+            self._config.runtime.stop_on_success,
+        )
+        _LOGGER.info("Backend selected: %s", self._config.runtime.backend)
         events_rows: list[dict[str, Any]] = [
             self._make_event(
                 event_type="run_started",
@@ -218,6 +242,11 @@ class ExperimentRunner:
         cycle_results: list[PickAndPlaceResult] = []
         try:
             for cycle_index in range(1, self._config.runtime.cycles + 1):
+                _LOGGER.info(
+                    "Cycle started: cycle_index=%s/%s",
+                    cycle_index,
+                    self._config.runtime.cycles,
+                )
                 events_rows.append(
                     self._make_event(
                         event_type="cycle_started",
@@ -232,6 +261,14 @@ class ExperimentRunner:
                     max_control_steps=self._config.runtime.max_control_steps_per_cycle
                 )
                 cycle_results.append(result)
+                _LOGGER.info(
+                    "Cycle finished: cycle_index=%s success=%s reason=%s executed_steps=%s target_marker_id=%s",
+                    cycle_index,
+                    result.success,
+                    result.reason,
+                    result.executed_steps,
+                    result.target_marker_id,
+                )
                 events_rows.append(
                     self._make_event(
                         event_type="cycle_finished",
@@ -249,6 +286,13 @@ class ExperimentRunner:
                 )
                 if self._config.runtime.stop_on_success and result.success:
                     break
+        except Exception:
+            _LOGGER.exception(
+                "Experiment failed: experiment=%s run_id=%s",
+                self._config.experiment,
+                run_id,
+            )
+            raise
         finally:
             self._shutdown_use_case(self._use_case)
         finished_at = datetime.now(timezone.utc)
@@ -267,7 +311,6 @@ class ExperimentRunner:
             timeseries_rows=timeseries_rows,
         )
 
-        run_id = f"{started_at.strftime('%Y%m%dT%H%M%S')}_{uuid4().hex[:8]}"
         timeseries_rows = self._build_timeseries_rows(
             run_id=run_id,
             cycle_results=cycle_results_tuple,
@@ -316,6 +359,19 @@ class ExperimentRunner:
                 save_json=self._config.persistence.save_json,
                 save_csv=self._config.persistence.save_csv,
             )
+            _LOGGER.info(
+                "Structured artifacts saved: run_dir=%s",
+                artifacts.get("run_dir"),
+            )
+
+        _LOGGER.info(
+            "Experiment finished: experiment=%s run_id=%s success_count=%s failure_count=%s success_rate=%.3f",
+            self._config.experiment,
+            run_id,
+            metrics["success_count"],
+            metrics["failure_count"],
+            metrics["success_rate"],
+        )
 
         return ExperimentExecution(
             experiment=self._config.experiment,
@@ -334,6 +390,26 @@ class ExperimentRunner:
             np.random.seed(seed)
         except Exception:
             pass
+
+    def _prepare_run_dir(
+        self,
+        *,
+        experiment: str,
+        run_id: str,
+    ) -> str | None:
+        if self._results_repository is None:
+            return None
+        run_dir = self._results_repository.prepare_run_dir(experiment, run_id)
+        return str(run_dir)
+
+    @staticmethod
+    def _setup_operational_logging(run_dir: str | None) -> None:
+        log_file_path = None if run_dir is None else str(Path(run_dir) / _LOG_FILE_NAME)
+        setup_logging(
+            LoggingConfig(
+                log_file_path=log_file_path,
+            )
+        )
 
     def _collect_metrics(
         self,

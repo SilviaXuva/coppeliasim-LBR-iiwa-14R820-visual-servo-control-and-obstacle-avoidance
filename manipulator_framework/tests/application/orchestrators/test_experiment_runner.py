@@ -1,3 +1,5 @@
+from pathlib import Path
+import shutil
 import unittest
 
 from manipulator_framework.application.orchestrators.experiment_runner import (
@@ -6,6 +8,8 @@ from manipulator_framework.application.orchestrators.experiment_runner import (
 )
 from manipulator_framework.application.use_cases.pick_and_place import PickAndPlaceResult
 from manipulator_framework.config.experiment_config import ExperimentConfig
+from manipulator_framework.infrastructure.logging import LoggingConfig, setup_logging
+from manipulator_framework.infrastructure.results_repository import ResultsRepository
 from manipulator_framework.core.models.marker_state import MarkerState
 from manipulator_framework.core.models.pose import Pose
 from manipulator_framework.core.models.robot_state import RobotState
@@ -109,6 +113,28 @@ class _FakeKinematics:
 
 
 class TestExperimentRunner(unittest.TestCase):
+    def setUp(self) -> None:
+        setup_logging(
+            LoggingConfig(
+                level="INFO",
+                log_to_console=False,
+                log_to_file=False,
+            )
+        )
+
+    def tearDown(self) -> None:
+        setup_logging(
+            LoggingConfig(
+                level="INFO",
+                log_to_console=False,
+                log_to_file=False,
+            )
+        )
+        shutil.rmtree(
+            Path("manipulator_framework/tests/_tmp_runner"),
+            ignore_errors=True,
+        )
+
     def test_run_honors_stop_on_success(self) -> None:
         fake_use_case = _FakeUseCase(
             [
@@ -155,16 +181,37 @@ class TestExperimentRunner(unittest.TestCase):
         fake_use_case = _FakeUseCaseWithShutdown()
         config = ExperimentConfig()
         config.runtime.cycles = 1
+        tmp_dir = Path("manipulator_framework/tests/_tmp_runner")
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        repository = ResultsRepository(tmp_dir)
         runner = ExperimentRunner(
             use_case=fake_use_case,  # type: ignore[arg-type]
             config=config,
-            results_repository=None,
+            results_repository=repository,
         )
 
-        execution = runner.run_experiment()
+        with self.assertLogs(
+            "manipulator_framework.application.orchestrators.experiment_runner",
+            level="INFO",
+        ) as captured:
+            execution = runner.run_experiment()
+
+        log_output = "\n".join(captured.output)
+        log_file = Path(tmp_dir) / execution.experiment / execution.run_id / "operational.log"
 
         self.assertEqual(execution.metrics["cycles_executed"], 1)
         self.assertEqual(fake_use_case.shutdown_calls, 1)
+        self.assertTrue(log_file.exists())
+        self.assertIn("Experiment started", log_output)
+        self.assertIn("Backend selected", log_output)
+        self.assertIn("Experiment finished", log_output)
+        setup_logging(
+            LoggingConfig(
+                level="INFO",
+                log_to_console=False,
+                log_to_file=False,
+            )
+        )
 
     def test_from_config_supports_dynamic_pd_experiment(self) -> None:
         config = ExperimentConfig(experiment="pick_and_place_dyn_pd")
